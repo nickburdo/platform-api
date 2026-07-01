@@ -59,6 +59,7 @@ Resolved during planning discussion (2026-07-01):
     - `glucose_measurements` gets `fasting_value` (nullable number) and `after_meal_value` (nullable number) instead of `value`
     - New cross-field validation rule: exactly one of `fastingValue`/`afterMealValue` must be present on create (both present or both absent is a `400`); whichever is present must be `> 0`
     - `models.md` and `api.md` need updating to reflect this (tracked in Documentation Updates)
+20. **Seed dates are relative to run time, not fixed** — `seed.sql` computes `measured_at`/`happened_at`/`applied_at`/`next_follow_up_at`/`created_at`/`updated_at` using SQLite's `strftime('%Y-%m-%dT%H:%M:%f', 'now', '±N days') || 'Z'` instead of hardcoded ISO strings baked in at authoring time. This matches the original Prisma seed scripts' behavior (they compute `daysAgo()`/`daysFromNow()` at run time) and keeps demo data looking current every time it's reseeded, rather than drifting further into the past as real time passes. Only `id` is fixed/hardcoded (Decision #13) — dates are intentionally not.
 
 ---
 
@@ -187,37 +188,19 @@ Reference: `development.md`, Decision #13, Decision #17 (sequencing)
 
 Seed is plain SQL, not a TypeScript script, and lives next to each database's schema. Runs immediately after the migrations in Section 2 are applied — no dependency on Sections 4–8 below.
 
-- [ ] `src/db/job-tracker/seed.sql`
-  ```sql
-  DELETE FROM job_applications WHERE is_demo = 1;
-  INSERT INTO job_applications (id, company, position, status, ..., is_demo) VALUES
-    ('<fixed-uuid-1>', 'Google', 'Frontend Developer', 'APPLIED', ..., 1),
-    ...;
-  ```
-  - A realistic spread across all `JobApplicationStatus` values, multiple companies, enough volume to exercise pagination (e.g. 40–80 records)
-- [ ] `src/db/health-monitor/seed.sql`
-  ```sql
-  DELETE FROM glucose_measurements WHERE is_demo = 1;
-  DELETE FROM blood_pressure_measurements WHERE is_demo = 1;
-  DELETE FROM weight_measurements WHERE is_demo = 1;
-  DELETE FROM symptom_entries WHERE is_demo = 1;
-
-  INSERT INTO glucose_measurements (...) VALUES (...);
-  INSERT INTO blood_pressure_measurements (...) VALUES (...);
-  INSERT INTO weight_measurements (...) VALUES (...);
-  INSERT INTO symptom_entries (...) VALUES (...);
-  ```
-  - Measurements spread across several weeks, enough volume to exercise date-range filtering and the dashboard aggregation
-- [ ] Every row in both files sets `is_demo = 1`
-- [ ] Seed fixture rows use **fixed, hardcoded UUIDs** written directly into the SQL (not generated at seed time) — this keeps re-running the seed reproducible (same IDs every time) and makes manual Postman testing easier to script against stable IDs
-- [ ] Because seed deletes only `is_demo = 1` rows before inserting, it never touches non-demo data and is always safe to re-run
-- [ ] Run via `wrangler d1 execute`, one command per database:
+- [x] `src/db/job-tracker/seed.sql` — 16 job applications adapted from `docs/seed/job-tracker/seed.ts` (Decision #18), covering all 9 `JobApplicationStatus` values
+- [x] `src/db/health-monitor/seed.sql` — 10 rows each in `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries` (40 total), adapted from `docs/seed/health-monitor/seed.mjs` (Decision #18), spread across the last 30 days
+- [x] Every row in both files sets `is_demo = 1`
+- [x] Seed fixture rows use **fixed, hardcoded UUIDs** written directly into the SQL (not generated at seed time) — this keeps re-running the seed reproducible (same IDs every time) and makes manual Postman testing easier to script against stable IDs. Dates, by contrast, are computed relative to run time via SQLite functions, not fixed (Decision #20).
+- [x] Because seed deletes only `is_demo = 1` rows before inserting, it never touches non-demo data and is always safe to re-run
+- [x] Run via `wrangler d1 execute`, one command per database:
   ```bash
   wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql
   wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql
   ```
-- [ ] Add matching `package.json` scripts, e.g. `db:seed:job-tracker`, `db:seed:health-monitor` (and optionally a combined `db:seed` running both)
-- [ ] Seed is always an explicit, manual command — never runs automatically as part of deployment
+- [x] Add matching `package.json` scripts: `db:seed:job-tracker`, `db:seed:health-monitor`, combined `db:seed`
+- [x] Seed is always an explicit, manual command — never runs automatically as part of deployment
+- [x] Executed against both cloud databases and verified: 16 rows in `job_applications`, 10 rows in each of the 4 Health Monitor tables; glucose rows confirmed to have exactly one of `fasting_value`/`after_meal_value` populated, never both
 
 ---
 

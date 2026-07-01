@@ -8,7 +8,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:seed:job-tracker": "wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql",
+    "db:seed:health-monitor": "wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql",
+    "db:seed": "npm run db:seed:job-tracker && npm run db:seed:health-monitor"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
