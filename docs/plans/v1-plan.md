@@ -68,6 +68,15 @@ Resolved during planning discussion (2026-07-01):
     - Migrations are read from disk at config-build time via `readD1Migrations()` and injected as JSON bindings (`TEST_JOB_TRACKER_MIGRATIONS`, `TEST_HEALTH_MONITOR_MIGRATIONS`); `src/db/test-setup.ts` (a Vitest `setupFiles` entry) applies them to the two D1 bindings via `applyD1Migrations()` from `cloudflare:test` before each test file runs.
     - **Storage isolation is per test *file*, not per individual `it()`** — confirmed empirically (rows created in one test were still visible in a later test in the same file, inflating counts). Every repository test file needs its own `beforeEach` that clears the relevant table(s) before each test; don't rely on the pool resetting state between `it()` blocks.
     - Typing `env` from `cloudflare:test` requires the project's own generated `worker-configuration.d.ts` (`npm run cf-typegen` → `wrangler types`), not just `@cloudflare/workers-types` — the latter provides ambient global types (`D1Database`, etc.) but not a project-specific `Env` interface with our actual binding names. `worker-configuration.d.ts` is generated, gitignored, and excluded from ESLint/Prettier, matching how `src/db/*/migrations` and `docs/` are already treated. Wrangler's own CLI output suggests migrating off `@cloudflare/workers-types` entirely in favor of generated runtime types — **not done here**, out of scope for Section 5, revisit separately if desired.
+24. **Repositories live under `src/db/<domain>/`, not a top-level `src/repositories/`** — a high-effort code review (2026-07-01) caught that Section 5's repository files were silently placed inside `src/db/job-tracker/` and `src/db/health-monitor/`, contradicting Section 1's original approved scaffold (which showed a separate top-level `repositories/` folder) with no plan revision recorded at the time — a violation of `CLAUDE.md`'s "no deviation without revision" rule. Resolved by accepting the as-built location and correcting Section 1's scaffold retroactively (rather than moving 12 files), since repositories are colocated with the `client.ts`/`schema.ts` they use and import paths are already shorter this way. `src/repositories/.gitkeep` is removed as dead scaffolding.
+25. **Code review fixes (2026-07-01)** — a high-effort review after Section 5 found and fixed, in order of severity:
+    - `updateJobApplicationSchema`: `.partial()` didn't strip `.default()` from `status`/`currency`, so a PATCH omitting them silently reset them to `SAVED`/`USD`. Fixed by moving the defaults out of the shared base shape and applying them only in `createJobApplicationSchema` via `.extend()`.
+    - `updateGlucoseMeasurement`: a partial update setting only `fastingValue` (or only `afterMealValue`) could leave a row with both populated if the other was already set from a prior write, violating Decision #19. Fixed by having the repository null out the untouched value field whenever the other one is patched.
+    - `blood-pressure.schema.ts`: `systolic`/`diastolic` had no lower bound, so negative/zero values passed as long as `systolic > diastolic` held. Fixed by adding `.positive()` to both, matching every sibling numeric field in the codebase.
+    - `job-applications.repository.ts`: the `search` term was interpolated unescaped into a SQL `LIKE` pattern, so a literal `_`/`%` in a search term acted as a SQL wildcard (confirmed live: searching `"co_op"` also matched `"coXop"`). Fixed by escaping `\`, `%`, `_` in the term and adding an explicit `ESCAPE '\'` clause via a raw `sql` template (`drizzle-orm`'s `like()` helper has no escape-clause support).
+    - `common.schema.ts`: the `date_from`/`date_to` regex only checked digit-grouping shape, so calendar-invalid dates (month 13, Feb 30, Feb 29 on a non-leap year) passed validation and silently produced wrong query bounds instead of a `400`. Fixed by adding a round-trip-through-`Date` refine.
+    - Deduplicated the four near-identical Health Monitor `buildFilters` functions into one shared helper (`src/utils/repository-filters.ts`), and the two identical job-applications/blood-pressure cross-field `{ check, options }` refine rules into one shared `common.schema.ts` helper (glucose's rule stayed separate — its shape is genuinely different, per the review's own verification).
+    - `getJobApplicationsMeta(db, isDemo?: boolean)` took `isDemo` as a bare positional argument while every other list function takes it as a `params` object field — changed to `getJobApplicationsMeta(db, params?: { isDemo?: boolean })` for consistency.
 
 ---
 
@@ -104,19 +113,21 @@ Reference: `architecture.md`, `development.md`, `deployment.md`
   │   │   ├── client.ts
   │   │   ├── schema.ts
   │   │   ├── seed.sql
-  │   │   └── migrations/
+  │   │   ├── migrations/
+  │   │   └── *.repository.ts
   │   └── health-monitor/
   │       ├── client.ts
   │       ├── schema.ts
   │       ├── seed.sql
-  │       └── migrations/
+  │       ├── migrations/
+  │       └── *.repository.ts
   ├── routes/
   ├── services/
-  ├── repositories/
   ├── schemas/
   ├── middleware/
   └── utils/
   ```
+  Updated per Decision #24 — repository files live colocated under `src/db/<domain>/`, not in a separate top-level `src/repositories/` (the original scaffold here was wrong; corrected retroactively after a code review caught the drift).
 - [x] Implement `src/app.ts` — Hono app instance (routers/global middleware are added in Sections 6–7, not part of infrastructure)
 - [x] Implement `src/index.ts` — Worker entrypoint exporting `fetch`
 - [x] Implement `src/db/job-tracker/client.ts` — Drizzle client bound to the `JOB_TRACKER_DB` binding (schema-less for now; `schema.ts` lands in Section 2)
@@ -327,15 +338,16 @@ Reference: `development.md`, Decision #22 (automated tests adopted)
 ## 9.1 Automated Unit Tests (Vitest)
 
 - [x] Install and configure `vitest` (`vitest.config.ts`, `npm test` → `vitest run`)
-- [x] `src/schemas/common.schema.test.ts` — `idParamSchema`, `dateRangeQuerySchema` (format + range + boundary equality), `paginationQuerySchema` (defaults, coercion, bounds) — 12 tests
-- [x] `src/schemas/job-applications.schema.test.ts` — defaults, required fields, enum rejection, salary range, follow-up ordering, partial update, query schema — 14 tests
+- [x] `src/schemas/common.schema.test.ts` — `idParamSchema`, `dateRangeQuerySchema` (format + range + boundary equality + calendar validity), `paginationQuerySchema` (defaults, coercion, bounds) — 15 tests
+- [x] `src/schemas/job-applications.schema.test.ts` — defaults, required fields, enum rejection, salary range, follow-up ordering, partial update (including the Decision #25 default-reset regression test), query schema — 15 tests
 - [x] `src/schemas/glucose.schema.test.ts` — exactly-one-of `fastingValue`/`afterMealValue` (both/neither/one/negative/zero), ignore-only update, update rejects setting both — 12 tests
-- [x] `src/schemas/blood-pressure.schema.test.ts` — systolic/diastolic ordering, pulse bounds, partial update skips the cross-field check unless both sides present — 8 tests
+- [x] `src/schemas/blood-pressure.schema.test.ts` — systolic/diastolic ordering, pulse bounds (including the Decision #25 lower-bound regression tests), partial update skips the cross-field check unless both sides present — 12 tests
 - [x] `src/schemas/weight.schema.test.ts` — positive value enforcement on create and update — 6 tests
 - [x] `src/schemas/symptom.schema.test.ts` — intensity bounds (1–10 inclusive) — 7 tests
 - [x] `src/utils/validation.test.ts` — `zodErrorToResponse()` produces the documented `{ error: { message, details } }` shape, bucketed by field — 2 tests
-- [x] Full suite green: 61 tests across 7 files (`npm test`)
-- [ ] Extend to Repositories and Services as they're implemented in Sections 5–6 (Decision #22) — whether Repository tests need `@cloudflare/vitest-pool-workers` or manual D1 mocking is decided when Section 5 starts
+- [x] `src/utils/date-range.test.ts` — end-of-day widening — 5 tests
+- [x] Repository tests (`*.repo.test.ts`, Section 5, real D1 via `@cloudflare/vitest-pool-workers`) — 34 tests across 6 files, including the Decision #25 regressions (glucose partial-update invariant, LIKE-wildcard escaping)
+- [x] Full suite green: 106 tests total (72 unit + 34 repository) across 14 files (`npm test`)
 
 ## 9.2 Manual Testing (Postman)
 

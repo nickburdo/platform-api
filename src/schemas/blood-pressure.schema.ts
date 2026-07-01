@@ -1,21 +1,24 @@
 import { z } from 'zod';
+import { optionalFieldOrderRule } from './common.schema';
 
 // List queries reuse `dateRangeQuerySchema` from common.schema.ts directly.
 
-const systolicOverDiastolicRule = {
-  check: (data: { systolic?: number; diastolic?: number }) =>
-    data.systolic == null || data.diastolic == null || data.systolic > data.diastolic,
-  options: {
-    message: 'systolic must be greater than diastolic',
-    path: ['systolic'] as PropertyKey[],
-  },
-};
+const systolicOverDiastolicRule = optionalFieldOrderRule<{
+  systolic?: number;
+  diastolic?: number;
+}>(
+  (data) => data.systolic,
+  (data) => data.diastolic,
+  (a, b) => a > b,
+  'systolic must be greater than diastolic',
+  ['systolic'],
+);
 
 export const createBloodPressureSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    systolic: z.number().int(),
-    diastolic: z.number().int(),
+    systolic: z.number().int().positive(),
+    diastolic: z.number().int().positive(),
     pulse: z.number().int().positive(),
     note: z.string().optional(),
   })
@@ -24,8 +27,8 @@ export const createBloodPressureSchema = z
 export const updateBloodPressureSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    systolic: z.number().int(),
-    diastolic: z.number().int(),
+    systolic: z.number().int().positive(),
+    diastolic: z.number().int().positive(),
     pulse: z.number().int().positive(),
     note: z.string().optional(),
     ignored: z.boolean().optional(),

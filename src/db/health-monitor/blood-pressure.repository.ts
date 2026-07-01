@@ -1,5 +1,5 @@
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
-import { toDateRangeBounds, type DateRangeInput } from '../../utils/date-range';
+import { asc, eq } from 'drizzle-orm';
+import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import {
   bloodPressureMeasurements,
@@ -7,19 +7,14 @@ import {
   type NewBloodPressureMeasurement,
 } from './schema';
 
-export interface ListBloodPressureParams extends DateRangeInput {
-  isDemo?: boolean;
-}
+export type ListBloodPressureParams = DateRangeFilterParams;
 
 function buildFilters(params: ListBloodPressureParams) {
-  const { from, to } = toDateRangeBounds(params);
-  const conditions = [];
-  if (from) conditions.push(gte(bloodPressureMeasurements.measuredAt, from));
-  if (to) conditions.push(lte(bloodPressureMeasurements.measuredAt, to));
-  if (params.isDemo !== undefined) {
-    conditions.push(eq(bloodPressureMeasurements.isDemo, params.isDemo));
-  }
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return buildDateRangeFilter(
+    bloodPressureMeasurements.measuredAt,
+    bloodPressureMeasurements.isDemo,
+    params,
+  );
 }
 
 export async function listBloodPressureMeasurements(

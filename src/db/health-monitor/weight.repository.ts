@@ -1,19 +1,12 @@
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
-import { toDateRangeBounds, type DateRangeInput } from '../../utils/date-range';
+import { asc, eq } from 'drizzle-orm';
+import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { weightMeasurements, type NewWeightMeasurement, type WeightMeasurement } from './schema';
 
-export interface ListWeightParams extends DateRangeInput {
-  isDemo?: boolean;
-}
+export type ListWeightParams = DateRangeFilterParams;
 
 function buildFilters(params: ListWeightParams) {
-  const { from, to } = toDateRangeBounds(params);
-  const conditions = [];
-  if (from) conditions.push(gte(weightMeasurements.measuredAt, from));
-  if (to) conditions.push(lte(weightMeasurements.measuredAt, to));
-  if (params.isDemo !== undefined) conditions.push(eq(weightMeasurements.isDemo, params.isDemo));
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return buildDateRangeFilter(weightMeasurements.measuredAt, weightMeasurements.isDemo, params);
 }
 
 export async function listWeightMeasurements(

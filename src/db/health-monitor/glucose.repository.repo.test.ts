@@ -53,6 +53,23 @@ describe('updateGlucoseMeasurement', () => {
     expect(updated?.reason).toBe('Incorrect reading');
     expect(updated?.fastingValue).toBe(90);
   });
+
+  it('nulls out afterMealValue when fastingValue is patched, preserving the exactly-one invariant', async () => {
+    await createGlucoseMeasurement(
+      db,
+      makeRow({ id: 'g-3', fastingValue: null, afterMealValue: 130 }),
+    );
+    const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 });
+    expect(updated?.fastingValue).toBe(95);
+    expect(updated?.afterMealValue).toBeNull();
+  });
+
+  it('nulls out fastingValue when afterMealValue is patched, preserving the exactly-one invariant', async () => {
+    await createGlucoseMeasurement(db, makeRow({ id: 'g-4', fastingValue: 88 }));
+    const updated = await updateGlucoseMeasurement(db, 'g-4', { afterMealValue: 140 });
+    expect(updated?.afterMealValue).toBe(140);
+    expect(updated?.fastingValue).toBeNull();
+  });
 });
 
 describe('listGlucoseMeasurements', () => {

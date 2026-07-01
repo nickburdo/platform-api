@@ -127,6 +127,19 @@ describe('listJobApplications', () => {
     expect(byNotes.rows[0]?.id).toBe('l-1');
   });
 
+  it('treats a literal underscore in the search term as literal, not a wildcard', async () => {
+    await createJobApplication(db, makeRow({ id: 'l-4', company: 'co_op', status: 'SAVED' }));
+    await createJobApplication(db, makeRow({ id: 'l-5', company: 'coXop', status: 'SAVED' }));
+
+    const { rows, total } = await listJobApplications(db, {
+      page: 1,
+      limit: 20,
+      search: 'co_op',
+    });
+    expect(total).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual(['l-4']);
+  });
+
   it('paginates using page and limit', async () => {
     const page1 = await listJobApplications(db, { page: 1, limit: 2 });
     const page2 = await listJobApplications(db, { page: 2, limit: 2 });
@@ -150,5 +163,18 @@ describe('getJobApplicationsMeta', () => {
     expect(meta.companies.sort()).toEqual(['Acme', 'Globex']);
     expect(meta.statusCounts.APPLIED).toBe(2);
     expect(meta.statusCounts.REJECTED).toBe(1);
+  });
+
+  it('accepts isDemo as part of an options object, consistent with the other list functions', async () => {
+    await Promise.all([
+      createJobApplication(db, makeRow({ id: 'm-4', company: 'Initech', isDemo: true })),
+      createJobApplication(db, makeRow({ id: 'm-5', company: 'Umbrella', isDemo: false })),
+    ]);
+
+    const demoMeta = await getJobApplicationsMeta(db, { isDemo: true });
+    expect(demoMeta.companies).toEqual(['Initech']);
+
+    const realMeta = await getJobApplicationsMeta(db, { isDemo: false });
+    expect(realMeta.companies).toEqual(['Umbrella']);
   });
 });

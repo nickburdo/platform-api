@@ -106,6 +106,15 @@ describe('updateJobApplicationSchema', () => {
       updateJobApplicationSchema.safeParse({ salaryMin: 150000, salaryMax: 100000 }).success,
     ).toBe(false);
   });
+
+  it('does not inject status/currency defaults when they are omitted from the patch', () => {
+    const result = updateJobApplicationSchema.safeParse({ notes: 'called them back' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect('status' in result.data).toBe(false);
+      expect('currency' in result.data).toBe(false);
+    }
+  });
 });
 
 describe('listJobApplicationsQuerySchema', () => {

@@ -1,4 +1,4 @@
-import { and, count, eq, like, or } from 'drizzle-orm';
+import { and, Column, count, eq, or, sql } from 'drizzle-orm';
 import type { JobTrackerDb } from './client';
 import {
   jobApplications,
@@ -23,6 +23,18 @@ export interface ListJobApplicationsResult {
   total: number;
 }
 
+// Escapes SQLite LIKE wildcard metacharacters (`%`, `_`) and the escape
+// character itself, so a literal `_`/`%` in a user's search term is matched
+// literally instead of acting as a wildcard (e.g. searching "co_op" would
+// otherwise also match "coXop").
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function likeEscaped(column: Column, term: string) {
+  return sql`${column} LIKE ${term} ESCAPE '\\'`;
+}
+
 function buildFilters(params: {
   status?: JobApplicationStatus;
   company?: string;
@@ -34,13 +46,13 @@ function buildFilters(params: {
   if (params.company) conditions.push(eq(jobApplications.company, params.company));
   if (params.isDemo !== undefined) conditions.push(eq(jobApplications.isDemo, params.isDemo));
   if (params.search) {
-    const term = `%${params.search}%`;
+    const term = `%${escapeLikeTerm(params.search)}%`;
     conditions.push(
       or(
-        like(jobApplications.company, term),
-        like(jobApplications.position, term),
-        like(jobApplications.source, term),
-        like(jobApplications.notes, term),
+        likeEscaped(jobApplications.company, term),
+        likeEscaped(jobApplications.position, term),
+        likeEscaped(jobApplications.source, term),
+        likeEscaped(jobApplications.notes, term),
       ),
     );
   }
@@ -106,11 +118,16 @@ export interface JobApplicationsMetaRaw {
   total: number;
 }
 
+export interface GetJobApplicationsMetaParams {
+  isDemo?: boolean;
+}
+
 export async function getJobApplicationsMeta(
   db: JobTrackerDb,
-  isDemo?: boolean,
+  params: GetJobApplicationsMetaParams = {},
 ): Promise<JobApplicationsMetaRaw> {
-  const isDemoFilter = isDemo !== undefined ? eq(jobApplications.isDemo, isDemo) : undefined;
+  const isDemoFilter =
+    params.isDemo !== undefined ? eq(jobApplications.isDemo, params.isDemo) : undefined;
 
   const [companyRows, statusRows, totalRows] = await Promise.all([
     db

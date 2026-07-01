@@ -1,19 +1,12 @@
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
-import { toDateRangeBounds, type DateRangeInput } from '../../utils/date-range';
+import { asc, eq } from 'drizzle-orm';
+import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { glucoseMeasurements, type GlucoseMeasurement, type NewGlucoseMeasurement } from './schema';
 
-export interface ListGlucoseParams extends DateRangeInput {
-  isDemo?: boolean;
-}
+export type ListGlucoseParams = DateRangeFilterParams;
 
 function buildFilters(params: ListGlucoseParams) {
-  const { from, to } = toDateRangeBounds(params);
-  const conditions = [];
-  if (from) conditions.push(gte(glucoseMeasurements.measuredAt, from));
-  if (to) conditions.push(lte(glucoseMeasurements.measuredAt, to));
-  if (params.isDemo !== undefined) conditions.push(eq(glucoseMeasurements.isDemo, params.isDemo));
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return buildDateRangeFilter(glucoseMeasurements.measuredAt, glucoseMeasurements.isDemo, params);
 }
 
 export async function listGlucoseMeasurements(
@@ -49,9 +42,21 @@ export async function updateGlucoseMeasurement(
   id: string,
   data: Partial<NewGlucoseMeasurement>,
 ): Promise<GlucoseMeasurement | undefined> {
+  // Preserve the "exactly one of fastingValue/afterMealValue" invariant
+  // (Decision #19) across partial updates: the Zod schema only validates the
+  // patch body in isolation, so setting one value field here without also
+  // clearing the other could otherwise leave a row with both populated if
+  // the existing row already had the other one set.
+  const patch = { ...data };
+  if (patch.fastingValue !== undefined && patch.afterMealValue === undefined) {
+    patch.afterMealValue = null;
+  } else if (patch.afterMealValue !== undefined && patch.fastingValue === undefined) {
+    patch.fastingValue = null;
+  }
+
   const [row] = await db
     .update(glucoseMeasurements)
-    .set(data)
+    .set(patch)
     .where(eq(glucoseMeasurements.id, id))
     .returning();
   return row;

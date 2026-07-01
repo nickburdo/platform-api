@@ -32,6 +32,19 @@ describe('dateRangeQuerySchema', () => {
     );
   });
 
+  it('rejects a shape-valid but calendar-invalid date (month 13)', () => {
+    expect(dateRangeQuerySchema.safeParse({ date_from: '2026-13-99' }).success).toBe(false);
+  });
+
+  it('rejects February 30th', () => {
+    expect(dateRangeQuerySchema.safeParse({ date_from: '2026-02-30' }).success).toBe(false);
+  });
+
+  it('accepts February 29th on a leap year and rejects it on a non-leap year', () => {
+    expect(dateRangeQuerySchema.safeParse({ date_from: '2024-02-29' }).success).toBe(true);
+    expect(dateRangeQuerySchema.safeParse({ date_from: '2023-02-29' }).success).toBe(false);
+  });
+
   it('rejects date_from after date_to', () => {
     expect(
       dateRangeQuerySchema.safeParse({ date_from: '2026-06-30', date_to: '2026-06-01' }).success,

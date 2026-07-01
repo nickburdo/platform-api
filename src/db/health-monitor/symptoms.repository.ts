@@ -1,19 +1,12 @@
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
-import { toDateRangeBounds, type DateRangeInput } from '../../utils/date-range';
+import { asc, eq } from 'drizzle-orm';
+import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { symptomEntries, type NewSymptomEntry, type SymptomEntry } from './schema';
 
-export interface ListSymptomsParams extends DateRangeInput {
-  isDemo?: boolean;
-}
+export type ListSymptomsParams = DateRangeFilterParams;
 
 function buildFilters(params: ListSymptomsParams) {
-  const { from, to } = toDateRangeBounds(params);
-  const conditions = [];
-  if (from) conditions.push(gte(symptomEntries.happenedAt, from));
-  if (to) conditions.push(lte(symptomEntries.happenedAt, to));
-  if (params.isDemo !== undefined) conditions.push(eq(symptomEntries.isDemo, params.isDemo));
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return buildDateRangeFilter(symptomEntries.happenedAt, symptomEntries.isDemo, params);
 }
 
 export async function listSymptomEntries(

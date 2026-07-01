@@ -37,6 +37,28 @@ describe('createBloodPressureSchema', () => {
     ).toBe(false);
   });
 
+  it('rejects a negative diastolic even when systolic > diastolic holds', () => {
+    expect(
+      createBloodPressureSchema.safeParse({
+        measuredAt: MEASURED_AT,
+        systolic: 5,
+        diastolic: -20,
+        pulse: 70,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a zero or negative systolic', () => {
+    expect(
+      createBloodPressureSchema.safeParse({
+        measuredAt: MEASURED_AT,
+        systolic: 0,
+        diastolic: -10,
+        pulse: 70,
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a zero pulse', () => {
     expect(
       createBloodPressureSchema.safeParse({
