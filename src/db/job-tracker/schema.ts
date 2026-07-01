@@ -1,5 +1,19 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+export const JOB_APPLICATION_STATUSES = [
+  'SAVED',
+  'APPLIED',
+  'SCREENING',
+  'TECHNICAL_INTERVIEW',
+  'FINAL_INTERVIEW',
+  'OFFER',
+  'REJECTED',
+  'WITHDRAWN',
+  'ARCHIVED',
+] as const;
+
+export const REMOTE_TYPES = ['REMOTE', 'HYBRID', 'OFFICE'] as const;
+
 export const jobApplications = sqliteTable(
   'job_applications',
   {
@@ -7,27 +21,13 @@ export const jobApplications = sqliteTable(
     company: text('company').notNull(),
     position: text('position').notNull(),
     vacancyUrl: text('vacancy_url'),
-    status: text('status', {
-      enum: [
-        'SAVED',
-        'APPLIED',
-        'SCREENING',
-        'TECHNICAL_INTERVIEW',
-        'FINAL_INTERVIEW',
-        'OFFER',
-        'REJECTED',
-        'WITHDRAWN',
-        'ARCHIVED',
-      ],
-    })
-      .notNull()
-      .default('SAVED'),
+    status: text('status', { enum: JOB_APPLICATION_STATUSES }).notNull().default('SAVED'),
     source: text('source'),
     salaryMin: integer('salary_min'),
     salaryMax: integer('salary_max'),
     currency: text('currency').notNull().default('USD'),
     location: text('location'),
-    remoteType: text('remote_type', { enum: ['REMOTE', 'HYBRID', 'OFFICE'] }),
+    remoteType: text('remote_type', { enum: REMOTE_TYPES }),
     notes: text('notes'),
     appliedAt: text('applied_at'),
     nextFollowUpAt: text('next_follow_up_at'),

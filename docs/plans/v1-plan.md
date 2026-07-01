@@ -60,6 +60,7 @@ Resolved during planning discussion (2026-07-01):
     - New cross-field validation rule: exactly one of `fastingValue`/`afterMealValue` must be present on create (both present or both absent is a `400`); whichever is present must be `> 0`
     - `models.md` and `api.md` need updating to reflect this (tracked in Documentation Updates)
 20. **Seed dates are relative to run time, not fixed** — `seed.sql` computes `measured_at`/`happened_at`/`applied_at`/`next_follow_up_at`/`created_at`/`updated_at` using SQLite's `strftime('%Y-%m-%dT%H:%M:%f', 'now', '±N days') || 'Z'` instead of hardcoded ISO strings baked in at authoring time. This matches the original Prisma seed scripts' behavior (they compute `daysAgo()`/`daysFromNow()` at run time) and keeps demo data looking current every time it's reseeded, rather than drifting further into the past as real time passes. Only `id` is fixed/hardcoded (Decision #13) — dates are intentionally not.
+21. **`date_from`/`date_to` query format and boundary** — accept **only** `YYYY-MM-DD` (matches every example in `api.md`; no full ISO-8601 datetime accepted in the query string, validated via a strict regex in Zod). `date_to` is inclusive of the entire day: the repository/service layer (Section 5) widens it to end-of-day (`< date_to + 1 day`, or equivalently `<= date_to 23:59:59.999`) before comparing against `measured_at`/`happened_at`, rather than treating it as an exact midnight instant. This widening happens outside Zod (which only validates the string format) — flagged here so Section 5 implements it consistently for all four Health Monitor resources and the dashboard.
 
 ---
 
@@ -210,22 +211,22 @@ Reference: `development.md`, `models.md`, `api.md`
 
 For each resource, three schema kinds:
 
-- [ ] **Create schema** (`POST` body) — excludes server-managed fields (`id`, `createdAt`, `updatedAt`, `isDemo`, and for Health Monitor also `ignored`/`reason`); for Job Tracker, `currency` defaults to `"USD"` when omitted and `remoteType` is validated against the enum `REMOTE` | `HYBRID` | `OFFICE`
-- [ ] **Update schema** (`PATCH` body) — all fields optional, plus the ignore/unignore pair (`ignored`, `reason`) for Health Monitor
-- [ ] **Query schema** — per-resource query params:
-  - Job Tracker: `page`, `limit`, `status`, `company`, `search`
-  - Health Monitor (all 4 resources + dashboard): `date_from`, `date_to`
-- [ ] **Path param schema**: `id` (string, non-empty) for all `:id` routes
+- [x] **Create schema** (`POST` body) — excludes server-managed fields (`id`, `createdAt`, `updatedAt`, `isDemo`, and for Health Monitor also `ignored`/`reason`); for Job Tracker, `currency` defaults to `"USD"` when omitted and `remoteType` is validated against the enum `REMOTE` | `HYBRID` | `OFFICE`
+- [x] **Update schema** (`PATCH` body) — all fields optional, plus the ignore/unignore pair (`ignored`, `reason`) for Health Monitor
+- [x] **Query schema** — per-resource query params:
+  - Job Tracker: `page`, `limit`, `status`, `company`, `search` (`src/schemas/job-applications.schema.ts`)
+  - Health Monitor (all 4 resources + dashboard): `date_from`, `date_to` — shared `dateRangeQuerySchema` in `src/schemas/common.schema.ts`, per Decision #21 (`YYYY-MM-DD` only)
+- [x] **Path param schema**: `id` (string, non-empty) for all `:id` routes — `idParamSchema` in `src/schemas/common.schema.ts`
 
-Cross-field validation (implemented as Zod `.refine()` or in the service layer — decide during implementation):
+Cross-field validation (implemented as Zod `.refine()`):
 
-- [ ] Job Tracker: `salaryMin <= salaryMax`, `appliedAt <= nextFollowUpAt`
-- [ ] Blood Pressure: `systolic > diastolic`, `pulse > 0`
-- [ ] Glucose: exactly one of `fastingValue`/`afterMealValue` present (not both, not neither), and it must be `> 0` (Decision #19)
-- [ ] Weight: `value > 0`
-- [ ] Symptom: `intensity` between 1 and 10 inclusive
+- [x] Job Tracker: `salaryMin <= salaryMax`, `appliedAt <= nextFollowUpAt`
+- [x] Blood Pressure: `systolic > diastolic`, `pulse > 0`
+- [x] Glucose: exactly one of `fastingValue`/`afterMealValue` present (not both, not neither), and it must be `> 0` (Decision #19) — runtime-verified with `safeParse` against both/neither/one-present/negative cases
+- [x] Weight: `value > 0`
+- [x] Symptom: `intensity` between 1 and 10 inclusive
 
-- [ ] Wire a global validation-error handler that maps Zod errors to the documented `400` error response shape
+- [x] Wire a global validation-error handler that maps Zod errors to the documented `400` error response shape — `zodErrorToResponse()` in `src/utils/validation.ts`, using Zod's `.flatten().fieldErrors` as `details` (Decision #7); runtime-verified to produce `{ error: { message: "Validation error", details: {...} } }`
 
 ---
 
