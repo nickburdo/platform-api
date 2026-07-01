@@ -6,10 +6,13 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
+    "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:repo",
+    "test:unit": "vitest run",
+    "test:repo": "vitest run --config vitest.workers.config.ts",
     "db:seed:job-tracker": "wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql",
     "db:seed:health-monitor": "wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql",
     "db:seed": "npm run db:seed:job-tracker && npm run db:seed:health-monitor"
@@ -20,6 +23,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.17.0",
     "@cloudflare/workers-types": "^4.20260701.1",
     "@eslint/js": "^10.0.1",
     "drizzle-kit": "^0.31.10",

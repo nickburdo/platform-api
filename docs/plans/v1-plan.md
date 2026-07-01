@@ -62,6 +62,12 @@ Resolved during planning discussion (2026-07-01):
 20. **Seed dates are relative to run time, not fixed** — `seed.sql` computes `measured_at`/`happened_at`/`applied_at`/`next_follow_up_at`/`created_at`/`updated_at` using SQLite's `strftime('%Y-%m-%dT%H:%M:%f', 'now', '±N days') || 'Z'` instead of hardcoded ISO strings baked in at authoring time. This matches the original Prisma seed scripts' behavior (they compute `daysAgo()`/`daysFromNow()` at run time) and keeps demo data looking current every time it's reseeded, rather than drifting further into the past as real time passes. Only `id` is fixed/hardcoded (Decision #13) — dates are intentionally not.
 21. **`date_from`/`date_to` query format and boundary** — accept **only** `YYYY-MM-DD` (matches every example in `api.md`; no full ISO-8601 datetime accepted in the query string, validated via a strict regex in Zod). `date_to` is inclusive of the entire day: the repository/service layer (Section 5) widens it to end-of-day (`< date_to + 1 day`, or equivalently `<= date_to 23:59:59.999`) before comparing against `measured_at`/`happened_at`, rather than treating it as an exact midnight instant. This widening happens outside Zod (which only validates the string format) — flagged here so Section 5 implements it consistently for all four Health Monitor resources and the dashboard.
 22. **Automated unit tests adopted, starting now** — supersedes `development.md`'s "Version 1 relies primarily on manual API testing." User decision: add `vitest`, starting with the Zod schemas already built in Section 4 (retroactively) and extending to Services/Repositories as they're built in Sections 5–6. Postman/manual testing (Section 9) remains in place *in addition to*, not instead of, automated tests — Section 9 and the Definition of Done are updated to require both. Test files are co-located next to their source (`*.schema.test.ts` beside `*.schema.ts`), not a parallel `tests/` tree — simplest option, standard Vitest convention. Repositories touch real D1 bindings directly; whether that needs `@cloudflare/vitest-pool-workers` or manual mocking is deferred until Section 5 is actually implemented, since no repository code exists yet to decide against.
+23. **Repository tests use `@cloudflare/vitest-pool-workers`** — repositories run tests inside a real `workerd` runtime against an ephemeral, Miniflare-backed D1 instance (not a hand-rolled `D1Database` mock). Migrations from `src/db/job-tracker/migrations` and `src/db/health-monitor/migrations` are applied to their respective ephemeral test databases before each test file runs. This is orthogonal to Decision #12 (cloud-only, no local dev database) — that decision is about the actual development/deployment workflow, not disposable per-test-run fixtures that never persist and are never used outside `vitest`.
+    - Installed version (`0.17.0`) uses a Vite-plugin API (`cloudflareTest()` from the package root), **not** the older `defineWorkersConfig` from a `/config` subpath documented in older Cloudflare examples — that subpath doesn't exist in this version.
+    - Two separate Vitest configs: `vitest.config.ts` (plain Node environment, schema/util tests, `*.test.ts` excluding `*.repo.test.ts`) and `vitest.workers.config.ts` (Workers pool, `*.repo.test.ts` only). `npm test` runs both (`test:unit` then `test:repo`); repository test files must end in `.repo.test.ts` to land in the right project.
+    - Migrations are read from disk at config-build time via `readD1Migrations()` and injected as JSON bindings (`TEST_JOB_TRACKER_MIGRATIONS`, `TEST_HEALTH_MONITOR_MIGRATIONS`); `src/db/test-setup.ts` (a Vitest `setupFiles` entry) applies them to the two D1 bindings via `applyD1Migrations()` from `cloudflare:test` before each test file runs.
+    - **Storage isolation is per test *file*, not per individual `it()`** — confirmed empirically (rows created in one test were still visible in a later test in the same file, inflating counts). Every repository test file needs its own `beforeEach` that clears the relevant table(s) before each test; don't rely on the pool resetting state between `it()` blocks.
+    - Typing `env` from `cloudflare:test` requires the project's own generated `worker-configuration.d.ts` (`npm run cf-typegen` → `wrangler types`), not just `@cloudflare/workers-types` — the latter provides ambient global types (`D1Database`, etc.) but not a project-specific `Env` interface with our actual binding names. `worker-configuration.d.ts` is generated, gitignored, and excluded from ESLint/Prettier, matching how `src/db/*/migrations` and `docs/` are already treated. Wrangler's own CLI output suggests migrating off `@cloudflare/workers-types` entirely in favor of generated runtime types — **not done here**, out of scope for Section 5, revisit separately if desired.
 
 ---
 
@@ -235,19 +241,18 @@ Cross-field validation (implemented as Zod `.refine()`):
 
 Reference: `development.md` (repositories only execute queries, no business rules)
 
-- [ ] `job-applications.repository.ts` — uses the `src/db/job-tracker/client.ts` Drizzle client (bound to `JOB_TRACKER_DB` / `job-tracker-db`)
-  - `list({ page, limit, status, company, search })` → rows + total count
-  - `findById(id)`
-  - `create(data)`
-  - `update(id, data)`
-  - `delete(id)`
-  - `getMeta()` helper queries: distinct companies, distinct statuses in use, aggregate counts for stats
-- [ ] `glucose.repository.ts`, `blood-pressure.repository.ts`, `weight.repository.ts`, `symptoms.repository.ts` — all use the `src/db/health-monitor/client.ts` Drizzle client (bound to `HEALTH_MONITOR_DB` / `health-monitor-db`)
-  - `list({ dateFrom, dateTo, isDemo })`
-  - `findById(id)`
-  - `create(data)`
-  - `update(id, data)` (used for both regular updates and ignore/unignore)
-- [ ] Dashboard repository (or a composed service call) — fetch all four Health Monitor lists (same `health-monitor-db` client) filtered by the same date range. No cross-database joins are needed anywhere in V1 since Job Tracker and Health Monitor never reference each other's data.
+- [x] `job-applications.repository.ts` — uses the `src/db/job-tracker/client.ts` Drizzle client (bound to `JOB_TRACKER_DB` / `job-tracker-db`)
+  - `listJobApplications({ page, limit, status, company, search, isDemo })` → rows + total count (`isDemo` added for symmetry with the Health Monitor repos, even though nothing in V1 can produce `isDemo: false` yet — kept optional so Section 6 Services can pass it once it matters)
+  - `findJobApplicationById(id)`
+  - `createJobApplication(data)`, `updateJobApplication(id, data)`, `deleteJobApplication(id)` — all use Drizzle's `.returning()`, confirmed working against real D1
+  - `getJobApplicationsMeta(isDemo?)` → distinct companies + per-status counts + total; rate math (`interviewRate` etc.) is deliberately left to Section 6 (Services), per that section's own plan text
+  - 12 repo tests (`.repo.test.ts`, real D1 via `@cloudflare/vitest-pool-workers`)
+- [x] `glucose.repository.ts`, `blood-pressure.repository.ts`, `weight.repository.ts`, `symptoms.repository.ts` — all use the `src/db/health-monitor/client.ts` Drizzle client (bound to `HEALTH_MONITOR_DB` / `health-monitor-db`)
+  - `list(...)` accepts `{ date_from, date_to, isDemo }`, widening `date_to` to end-of-day via `src/utils/date-range.ts` (Decision #21) — verified against real D1 with a record at 23:30 on the boundary date
+  - `findById(id)`, `create(data)`, `update(id, data)` (used for both regular updates and ignore/unignore)
+  - 18 repo tests total across the four files
+- [x] Dashboard repository (`dashboard.repository.ts`) — composes the four Health Monitor `list()` calls over the same date range via `Promise.all`; no query logic of its own. No cross-database joins are needed anywhere in V1 since Job Tracker and Health Monitor never reference each other's data. 2 repo tests.
+- [x] Shared `src/utils/date-range.ts` (`toDateRangeBounds`) — not in the original plan text verbatim, added because all four Health Monitor repos + dashboard needed the same end-of-day widening logic (Decision #21); 5 unit tests.
 
 ---
 

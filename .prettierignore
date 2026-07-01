@@ -3,3 +3,4 @@ dist
 .wrangler
 src/db/*/migrations
 docs
+worker-configuration.d.ts
