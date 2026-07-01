@@ -1,6 +1,5 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from './client';
+import type { HealthMonitorDb } from './client';
 import { symptomEntries, type NewSymptomEntry } from './schema';
 import {
   createSymptomEntry,
@@ -8,12 +7,12 @@ import {
   listSymptomEntries,
   updateSymptomEntry,
 } from './symptoms.repository';
+import { freshHealthMonitorDb } from './test-helpers';
 
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(symptomEntries);
+  db = await freshHealthMonitorDb(symptomEntries);
 });
 
 function makeRow(overrides: Partial<NewSymptomEntry> = {}): NewSymptomEntry {

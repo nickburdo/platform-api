@@ -1,7 +1,7 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from './client';
+import type { HealthMonitorDb } from './client';
 import { weightMeasurements, type NewWeightMeasurement } from './schema';
+import { freshHealthMonitorDb } from './test-helpers';
 import {
   createWeightMeasurement,
   findWeightMeasurementById,
@@ -12,8 +12,7 @@ import {
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(weightMeasurements);
+  db = await freshHealthMonitorDb(weightMeasurements);
 });
 
 function makeRow(overrides: Partial<NewWeightMeasurement> = {}): NewWeightMeasurement {

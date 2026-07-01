@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema';
-import { optionalFieldOrderRule, paginationQuerySchema } from './common.schema';
+import { paginationQuerySchema } from './common.schema';
 
 // No `.default()` here — defaults are applied only in createJobApplicationSchema
 // below. Zod's `.partial()` (used by updateJobApplicationSchema) strips the
@@ -24,21 +24,30 @@ const jobApplicationShape = {
   nextFollowUpAt: z.string().datetime().optional(),
 };
 
-const salaryRangeRule = optionalFieldOrderRule<{ salaryMin?: number; salaryMax?: number }>(
-  (data) => data.salaryMin,
-  (data) => data.salaryMax,
-  (a, b) => a <= b,
-  'salaryMin must be less than or equal to salaryMax',
-  ['salaryMin'],
-);
+// Written as explicit, un-abstracted checks (not a shared generic helper) —
+// a previous consolidation into a generic `optionalFieldOrderRule<TData>`
+// that took getter functions type-checked identically regardless of which
+// field was passed as "A" vs "B", so a swapped getter pair would silently
+// invert a rule's direction with no compiler error (confirmed by live
+// reproduction during code review). Explicit field access here is longer but
+// impossible to swap without the mistake being visible at the call site.
+const salaryRangeRule = {
+  check: (data: { salaryMin?: number; salaryMax?: number }) =>
+    data.salaryMin == null || data.salaryMax == null || data.salaryMin <= data.salaryMax,
+  options: {
+    message: 'salaryMin must be less than or equal to salaryMax',
+    path: ['salaryMin'] as PropertyKey[],
+  },
+};
 
-const followUpRule = optionalFieldOrderRule<{ appliedAt?: string; nextFollowUpAt?: string }>(
-  (data) => data.appliedAt,
-  (data) => data.nextFollowUpAt,
-  (a, b) => a <= b,
-  'appliedAt must be less than or equal to nextFollowUpAt',
-  ['appliedAt'],
-);
+const followUpRule = {
+  check: (data: { appliedAt?: string; nextFollowUpAt?: string }) =>
+    !data.appliedAt || !data.nextFollowUpAt || data.appliedAt <= data.nextFollowUpAt,
+  options: {
+    message: 'appliedAt must be less than or equal to nextFollowUpAt',
+    path: ['appliedAt'] as PropertyKey[],
+  },
+};
 
 export const createJobApplicationSchema = z
   .object(jobApplicationShape)

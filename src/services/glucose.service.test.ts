@@ -1,7 +1,7 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from '../db/health-monitor/client';
+import type { HealthMonitorDb } from '../db/health-monitor/client';
 import { glucoseMeasurements } from '../db/health-monitor/schema';
+import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
 import {
   createGlucoseMeasurement,
   findGlucoseMeasurementById,
@@ -12,8 +12,7 @@ import {
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(glucoseMeasurements);
+  db = await freshHealthMonitorDb(glucoseMeasurements);
 });
 
 const measuredAt = '2026-06-15T08:00:00.000Z';
@@ -29,17 +28,31 @@ describe('createGlucoseMeasurement', () => {
 });
 
 describe('updateGlucoseMeasurement', () => {
-  it('bumps updatedAt and delegates the exactly-one invariant to the repository', async () => {
+  it('nulls out afterMealValue when fastingValue is patched, preserving the exactly-one invariant', async () => {
     await createGlucoseMeasurement(db, 'g-2', { measuredAt, afterMealValue: 120 });
     const updated = await updateGlucoseMeasurement(db, 'g-2', { fastingValue: 95 });
     expect(updated?.fastingValue).toBe(95);
     expect(updated?.afterMealValue).toBeNull();
   });
 
+  it('nulls out fastingValue when afterMealValue is patched, preserving the exactly-one invariant', async () => {
+    await createGlucoseMeasurement(db, 'g-2b', { measuredAt, fastingValue: 88 });
+    const updated = await updateGlucoseMeasurement(db, 'g-2b', { afterMealValue: 140 });
+    expect(updated?.afterMealValue).toBe(140);
+    expect(updated?.fastingValue).toBeNull();
+  });
+
   it('returns undefined for a missing id', async () => {
     expect(
       await updateGlucoseMeasurement(db, 'nope', { ignored: true, reason: 'x' }),
     ).toBeUndefined();
+  });
+
+  it('throws if called directly with ignored: true and no reason, bypassing Zod', async () => {
+    await createGlucoseMeasurement(db, 'g-4', { measuredAt, fastingValue: 90 });
+    await expect(updateGlucoseMeasurement(db, 'g-4', { ignored: true })).rejects.toThrow(
+      'reason is required when ignored is true',
+    );
   });
 });
 

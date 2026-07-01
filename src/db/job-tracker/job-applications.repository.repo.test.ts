@@ -1,6 +1,5 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createJobTrackerDb, type JobTrackerDb } from './client';
+import type { JobTrackerDb } from './client';
 import {
   createJobApplication,
   deleteJobApplication,
@@ -9,17 +8,13 @@ import {
   listJobApplications,
   updateJobApplication,
 } from './job-applications.repository';
-import { jobApplications, type NewJobApplication } from './schema';
+import type { NewJobApplication } from './schema';
+import { freshJobTrackerDb } from './test-helpers';
 
 let db: JobTrackerDb;
 
-// Storage in @cloudflare/vitest-pool-workers is isolated per test *file*,
-// not per individual `it()` — state accumulates across tests in this file
-// otherwise (confirmed empirically: without this, later tests saw rows left
-// over from earlier ones). Clear the table before every test instead.
 beforeEach(async () => {
-  db = createJobTrackerDb(env.JOB_TRACKER_DB);
-  await db.delete(jobApplications);
+  db = await freshJobTrackerDb();
 });
 
 function makeRow(overrides: Partial<NewJobApplication> = {}): NewJobApplication {

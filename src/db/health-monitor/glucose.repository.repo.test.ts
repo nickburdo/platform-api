@@ -1,6 +1,5 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from './client';
+import type { HealthMonitorDb } from './client';
 import {
   createGlucoseMeasurement,
   findGlucoseMeasurementById,
@@ -8,14 +7,12 @@ import {
   updateGlucoseMeasurement,
 } from './glucose.repository';
 import { glucoseMeasurements, type NewGlucoseMeasurement } from './schema';
+import { freshHealthMonitorDb } from './test-helpers';
 
 let db: HealthMonitorDb;
 
-// Storage isolation is per test *file*, not per `it()` (see v1-plan.md
-// Decision #23) — clear the table before every test.
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(glucoseMeasurements);
+  db = await freshHealthMonitorDb(glucoseMeasurements);
 });
 
 function makeRow(overrides: Partial<NewGlucoseMeasurement> = {}): NewGlucoseMeasurement {
@@ -54,21 +51,19 @@ describe('updateGlucoseMeasurement', () => {
     expect(updated?.fastingValue).toBe(90);
   });
 
-  it('nulls out afterMealValue when fastingValue is patched, preserving the exactly-one invariant', async () => {
+  // The "exactly one of fastingValue/afterMealValue" invariant used to be
+  // enforced here, but it's business logic (Decision #19) and now lives in
+  // glucose.service.ts instead — see glucose.service.test.ts. This repository
+  // function is a plain passthrough, matching the other three Health Monitor
+  // repositories.
+  it('is a plain passthrough that does not null out the other value field itself', async () => {
     await createGlucoseMeasurement(
       db,
       makeRow({ id: 'g-3', fastingValue: null, afterMealValue: 130 }),
     );
     const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 });
     expect(updated?.fastingValue).toBe(95);
-    expect(updated?.afterMealValue).toBeNull();
-  });
-
-  it('nulls out fastingValue when afterMealValue is patched, preserving the exactly-one invariant', async () => {
-    await createGlucoseMeasurement(db, makeRow({ id: 'g-4', fastingValue: 88 }));
-    const updated = await updateGlucoseMeasurement(db, 'g-4', { afterMealValue: 140 });
-    expect(updated?.afterMealValue).toBe(140);
-    expect(updated?.fastingValue).toBeNull();
+    expect(updated?.afterMealValue).toBe(130);
   });
 });
 

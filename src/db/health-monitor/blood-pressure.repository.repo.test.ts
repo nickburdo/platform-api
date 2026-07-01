@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createBloodPressureMeasurement,
@@ -6,14 +5,14 @@ import {
   listBloodPressureMeasurements,
   updateBloodPressureMeasurement,
 } from './blood-pressure.repository';
-import { createHealthMonitorDb, type HealthMonitorDb } from './client';
+import type { HealthMonitorDb } from './client';
 import { bloodPressureMeasurements, type NewBloodPressureMeasurement } from './schema';
+import { freshHealthMonitorDb } from './test-helpers';
 
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(bloodPressureMeasurements);
+  db = await freshHealthMonitorDb(bloodPressureMeasurements);
 });
 
 function makeRow(

@@ -1,7 +1,7 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from '../db/health-monitor/client';
+import type { HealthMonitorDb } from '../db/health-monitor/client';
 import { weightMeasurements } from '../db/health-monitor/schema';
+import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
 import {
   createWeightMeasurement,
   findWeightMeasurementById,
@@ -12,8 +12,7 @@ import {
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(weightMeasurements);
+  db = await freshHealthMonitorDb(weightMeasurements);
 });
 
 const measuredAt = '2026-06-15T08:00:00.000Z';
@@ -33,6 +32,13 @@ describe('updateWeightMeasurement', () => {
     expect(
       await updateWeightMeasurement(db, 'nope', { ignored: true, reason: 'x' }),
     ).toBeUndefined();
+  });
+
+  it('throws if called directly with ignored: true and no reason, bypassing Zod', async () => {
+    await createWeightMeasurement(db, 'w-3', { measuredAt, value: 84.6 });
+    await expect(updateWeightMeasurement(db, 'w-3', { ignored: true })).rejects.toThrow(
+      'reason is required when ignored is true',
+    );
   });
 });
 

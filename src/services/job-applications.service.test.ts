@@ -1,7 +1,7 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createJobTrackerDb, type JobTrackerDb } from '../db/job-tracker/client';
-import { jobApplications } from '../db/job-tracker/schema';
+import type { JobTrackerDb } from '../db/job-tracker/client';
+import { createJobApplication as createJobApplicationRow } from '../db/job-tracker/job-applications.repository';
+import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import {
   createJobApplication,
   deleteJobApplication,
@@ -14,8 +14,7 @@ import {
 let db: JobTrackerDb;
 
 beforeEach(async () => {
-  db = createJobTrackerDb(env.JOB_TRACKER_DB);
-  await db.delete(jobApplications);
+  db = await freshJobTrackerDb();
 });
 
 const baseInput = {
@@ -37,7 +36,12 @@ describe('createJobApplication', () => {
 describe('updateJobApplication', () => {
   it('bumps updatedAt without touching createdAt', async () => {
     const created = await createJobApplication(db, 'job-2', baseInput);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Services have no injectable clock (they call `new Date()` directly),
+    // so this test relies on real wall-clock time passing between the two
+    // ISO timestamps. 50ms gives a wide safety margin over the ~1ms
+    // resolution of Date.toISOString() — a real D1 round-trip alone likely
+    // exceeds this, but the margin is kept explicit rather than assumed.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     const updated = await updateJobApplication(db, 'job-2', { notes: 'called back' });
     expect(updated?.notes).toBe('called back');
     expect(updated?.createdAt).toBe(created.createdAt);
@@ -100,5 +104,25 @@ describe('getJobApplicationsMeta', () => {
     expect(meta.stats.interviewRate).toBe(0);
     expect(meta.stats.offerRate).toBe(0);
     expect(meta.stats.rejectionRate).toBe(0);
+  });
+
+  it('scopes by isDemo when provided', async () => {
+    await createJobApplication(db, 'demo-1', { ...baseInput, company: 'DemoCo' });
+    // The service always sets isDemo: true on create in V1 (Decision #10) —
+    // insert a "real" row directly via the repository to exercise scoping.
+    await createJobApplicationRow(db, {
+      id: 'real-1',
+      ...baseInput,
+      company: 'RealCo',
+      isDemo: false,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+    });
+
+    const demoMeta = await getJobApplicationsMeta(db, { isDemo: true });
+    expect(demoMeta.companies).toEqual(['DemoCo']);
+
+    const realMeta = await getJobApplicationsMeta(db, { isDemo: false });
+    expect(realMeta.companies).toEqual(['RealCo']);
   });
 });

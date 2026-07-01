@@ -1,7 +1,7 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createHealthMonitorDb, type HealthMonitorDb } from '../db/health-monitor/client';
+import type { HealthMonitorDb } from '../db/health-monitor/client';
 import { symptomEntries } from '../db/health-monitor/schema';
+import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
 import {
   createSymptomEntry,
   findSymptomEntryById,
@@ -12,8 +12,7 @@ import {
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await db.delete(symptomEntries);
+  db = await freshHealthMonitorDb(symptomEntries);
 });
 
 const happenedAt = '2026-06-15T08:00:00.000Z';
@@ -35,6 +34,13 @@ describe('createSymptomEntry', () => {
 describe('updateSymptomEntry', () => {
   it('returns undefined for a missing id', async () => {
     expect(await updateSymptomEntry(db, 'nope', { ignored: true, reason: 'x' })).toBeUndefined();
+  });
+
+  it('throws if called directly with ignored: true and no reason, bypassing Zod', async () => {
+    await createSymptomEntry(db, 's-3', { happenedAt, type: 'headache', intensity: 3 });
+    await expect(updateSymptomEntry(db, 's-3', { ignored: true })).rejects.toThrow(
+      'reason is required when ignored is true',
+    );
   });
 });
 

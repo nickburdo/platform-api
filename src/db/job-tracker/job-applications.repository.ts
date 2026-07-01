@@ -1,4 +1,4 @@
-import { and, Column, count, eq, or, sql } from 'drizzle-orm';
+import { and, count, eq, or, sql, type Column } from 'drizzle-orm';
 import type { JobTrackerDb } from './client';
 import {
   jobApplications,

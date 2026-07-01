@@ -1,18 +1,18 @@
 import { z } from 'zod';
-import { optionalFieldOrderRule, reasonRequiredWhenIgnoredRule } from './common.schema';
+import { reasonRequiredWhenIgnoredRule } from './common.schema';
 
 // List queries reuse `dateRangeQuerySchema` from common.schema.ts directly.
 
-const systolicOverDiastolicRule = optionalFieldOrderRule<{
-  systolic?: number;
-  diastolic?: number;
-}>(
-  (data) => data.systolic,
-  (data) => data.diastolic,
-  (a, b) => a > b,
-  'systolic must be greater than diastolic',
-  ['systolic'],
-);
+// Written as an explicit, un-abstracted check — see job-applications.schema.ts
+// for why the shared generic this used to go through was removed.
+const systolicOverDiastolicRule = {
+  check: (data: { systolic?: number; diastolic?: number }) =>
+    data.systolic == null || data.diastolic == null || data.systolic > data.diastolic,
+  options: {
+    message: 'systolic must be greater than diastolic',
+    path: ['systolic'] as PropertyKey[],
+  },
+};
 
 export const createBloodPressureSchema = z
   .object({

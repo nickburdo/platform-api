@@ -104,8 +104,15 @@ export interface JobApplicationsMeta {
   stats: JobsStats;
 }
 
-export async function getJobApplicationsMeta(db: JobTrackerDb): Promise<JobApplicationsMeta> {
-  const raw = await getJobApplicationsMetaRow(db);
+export interface GetJobApplicationsMetaParams {
+  isDemo?: boolean;
+}
+
+export async function getJobApplicationsMeta(
+  db: JobTrackerDb,
+  params: GetJobApplicationsMetaParams = {},
+): Promise<JobApplicationsMeta> {
+  const raw = await getJobApplicationsMetaRow(db, params);
 
   const interviews = INTERVIEW_STATUSES.reduce(
     (sum, status) => sum + (raw.statusCounts[status] ?? 0),

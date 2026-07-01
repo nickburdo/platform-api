@@ -32,29 +32,6 @@ export const paginationQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-type Comparable = number | string;
-
-// Shared by every cross-field ".refine()" that only fires when both optional
-// fields are present (e.g. salaryMin/salaryMax, appliedAt/nextFollowUpAt,
-// systolic/diastolic) — absent on either side means "nothing to compare yet",
-// not a validation failure.
-export function optionalFieldOrderRule<TData>(
-  getA: (data: TData) => Comparable | undefined,
-  getB: (data: TData) => Comparable | undefined,
-  compare: (a: Comparable, b: Comparable) => boolean,
-  message: string,
-  path: PropertyKey[],
-) {
-  return {
-    check: (data: TData) => {
-      const a = getA(data);
-      const b = getB(data);
-      return a == null || b == null || compare(a, b);
-    },
-    options: { message, path },
-  };
-}
-
 // Shared by every Health Monitor update schema: `reason` must be a non-empty
 // string whenever `ignored: true` is set (Decision #26). No constraint is
 // placed on `reason` when `ignored` is false/absent — restoring a record

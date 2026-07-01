@@ -10,9 +10,14 @@ import type { dateRangeQuerySchema } from '../schemas/common.schema';
 // their repositories in V1 (no isDemo scoping happens yet, per Decision
 // #10), so recomposing through them here would be a redundant extra layer
 // with identical behavior.
+//
+// `isDemo` is a separate parameter, not a field on `dateRangeQuerySchema`:
+// it's never client-supplied (the server assigns it, e.g. from auth context
+// once V2 lands), so it doesn't belong in the schema that validates raw HTTP
+// query params — only in this internal service-level parameter.
 export async function getDashboardData(
   db: HealthMonitorDb,
-  query: z.infer<typeof dateRangeQuerySchema>,
+  query: z.infer<typeof dateRangeQuerySchema> & { isDemo?: boolean },
 ): Promise<DashboardData> {
   return getDashboardDataRow(db, query);
 }

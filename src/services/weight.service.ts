@@ -9,22 +9,18 @@ import {
 } from '../db/health-monitor/weight.repository';
 import type { dateRangeQuerySchema } from '../schemas/common.schema';
 import type { createWeightSchema, updateWeightSchema } from '../schemas/weight.schema';
+import {
+  assertReasonRequiredWhenIgnored,
+  withCreateStamps,
+  withUpdateStamp,
+} from './health-monitor-shared';
 
 export async function createWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createWeightSchema>,
 ): Promise<WeightMeasurement> {
-  const now = new Date().toISOString();
-  return createWeightMeasurementRow(db, {
-    id,
-    ...input,
-    isDemo: true,
-    ignored: false,
-    reason: '',
-    createdAt: now,
-    updatedAt: now,
-  });
+  return createWeightMeasurementRow(db, withCreateStamps(id, input));
 }
 
 export async function updateWeightMeasurement(
@@ -32,10 +28,8 @@ export async function updateWeightMeasurement(
   id: string,
   input: z.infer<typeof updateWeightSchema>,
 ): Promise<WeightMeasurement | undefined> {
-  return updateWeightMeasurementRow(db, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  assertReasonRequiredWhenIgnored(input);
+  return updateWeightMeasurementRow(db, id, withUpdateStamp(input));
 }
 
 export async function listWeightMeasurements(

@@ -37,26 +37,18 @@ export async function createGlucoseMeasurement(
   return row;
 }
 
+// Preserving the "exactly one of fastingValue/afterMealValue" invariant
+// (Decision #19) across partial updates is business logic, not a query
+// concern — it lives in glucose.service.ts, not here (per development.md:
+// "Repositories should not contain business rules... only execute queries").
 export async function updateGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewGlucoseMeasurement>,
 ): Promise<GlucoseMeasurement | undefined> {
-  // Preserve the "exactly one of fastingValue/afterMealValue" invariant
-  // (Decision #19) across partial updates: the Zod schema only validates the
-  // patch body in isolation, so setting one value field here without also
-  // clearing the other could otherwise leave a row with both populated if
-  // the existing row already had the other one set.
-  const patch = { ...data };
-  if (patch.fastingValue !== undefined && patch.afterMealValue === undefined) {
-    patch.afterMealValue = null;
-  } else if (patch.afterMealValue !== undefined && patch.fastingValue === undefined) {
-    patch.fastingValue = null;
-  }
-
   const [row] = await db
     .update(glucoseMeasurements)
-    .set(patch)
+    .set(data)
     .where(eq(glucoseMeasurements.id, id))
     .returning();
   return row;

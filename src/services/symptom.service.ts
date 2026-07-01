@@ -9,22 +9,18 @@ import {
 } from '../db/health-monitor/symptoms.repository';
 import type { dateRangeQuerySchema } from '../schemas/common.schema';
 import type { createSymptomSchema, updateSymptomSchema } from '../schemas/symptom.schema';
+import {
+  assertReasonRequiredWhenIgnored,
+  withCreateStamps,
+  withUpdateStamp,
+} from './health-monitor-shared';
 
 export async function createSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createSymptomSchema>,
 ): Promise<SymptomEntry> {
-  const now = new Date().toISOString();
-  return createSymptomEntryRow(db, {
-    id,
-    ...input,
-    isDemo: true,
-    ignored: false,
-    reason: '',
-    createdAt: now,
-    updatedAt: now,
-  });
+  return createSymptomEntryRow(db, withCreateStamps(id, input));
 }
 
 export async function updateSymptomEntry(
@@ -32,10 +28,8 @@ export async function updateSymptomEntry(
   id: string,
   input: z.infer<typeof updateSymptomSchema>,
 ): Promise<SymptomEntry | undefined> {
-  return updateSymptomEntryRow(db, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  assertReasonRequiredWhenIgnored(input);
+  return updateSymptomEntryRow(db, id, withUpdateStamp(input));
 }
 
 export async function listSymptomEntries(

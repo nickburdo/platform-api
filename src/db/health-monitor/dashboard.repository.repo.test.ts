@@ -1,7 +1,6 @@
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBloodPressureMeasurement } from './blood-pressure.repository';
-import { createHealthMonitorDb, type HealthMonitorDb } from './client';
+import type { HealthMonitorDb } from './client';
 import { getDashboardData } from './dashboard.repository';
 import { createGlucoseMeasurement } from './glucose.repository';
 import {
@@ -11,18 +10,18 @@ import {
   weightMeasurements,
 } from './schema';
 import { createSymptomEntry } from './symptoms.repository';
+import { freshHealthMonitorDb } from './test-helpers';
 import { createWeightMeasurement } from './weight.repository';
 
 let db: HealthMonitorDb;
 
 beforeEach(async () => {
-  db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
-  await Promise.all([
-    db.delete(glucoseMeasurements),
-    db.delete(bloodPressureMeasurements),
-    db.delete(weightMeasurements),
-    db.delete(symptomEntries),
-  ]);
+  db = await freshHealthMonitorDb(
+    glucoseMeasurements,
+    bloodPressureMeasurements,
+    weightMeasurements,
+    symptomEntries,
+  );
 });
 
 const commonFields = {

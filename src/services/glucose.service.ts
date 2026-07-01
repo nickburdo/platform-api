@@ -6,25 +6,21 @@ import {
   listGlucoseMeasurements as listGlucoseMeasurementsRow,
   updateGlucoseMeasurement as updateGlucoseMeasurementRow,
 } from '../db/health-monitor/glucose.repository';
-import type { GlucoseMeasurement } from '../db/health-monitor/schema';
+import type { GlucoseMeasurement, NewGlucoseMeasurement } from '../db/health-monitor/schema';
 import type { dateRangeQuerySchema } from '../schemas/common.schema';
 import type { createGlucoseSchema, updateGlucoseSchema } from '../schemas/glucose.schema';
+import {
+  assertReasonRequiredWhenIgnored,
+  withCreateStamps,
+  withUpdateStamp,
+} from './health-monitor-shared';
 
 export async function createGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createGlucoseSchema>,
 ): Promise<GlucoseMeasurement> {
-  const now = new Date().toISOString();
-  return createGlucoseMeasurementRow(db, {
-    id,
-    ...input,
-    isDemo: true,
-    ignored: false,
-    reason: '',
-    createdAt: now,
-    updatedAt: now,
-  });
+  return createGlucoseMeasurementRow(db, withCreateStamps(id, input));
 }
 
 export async function updateGlucoseMeasurement(
@@ -32,10 +28,22 @@ export async function updateGlucoseMeasurement(
   id: string,
   input: z.infer<typeof updateGlucoseSchema>,
 ): Promise<GlucoseMeasurement | undefined> {
-  return updateGlucoseMeasurementRow(db, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  assertReasonRequiredWhenIgnored(input);
+
+  // Preserve the "exactly one of fastingValue/afterMealValue" invariant
+  // (Decision #19) across partial updates: the Zod schema only validates the
+  // patch body in isolation, so setting one value field here without also
+  // clearing the other could otherwise leave a row with both populated if
+  // the existing row already had the other one set. This is business logic
+  // (development.md), so it lives here, not in glucose.repository.ts.
+  const patch: Partial<NewGlucoseMeasurement> = { ...input };
+  if (patch.fastingValue !== undefined && patch.afterMealValue === undefined) {
+    patch.afterMealValue = null;
+  } else if (patch.afterMealValue !== undefined && patch.fastingValue === undefined) {
+    patch.fastingValue = null;
+  }
+
+  return updateGlucoseMeasurementRow(db, id, withUpdateStamp(patch));
 }
 
 export async function listGlucoseMeasurements(

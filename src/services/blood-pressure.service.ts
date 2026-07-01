@@ -12,22 +12,18 @@ import type {
   updateBloodPressureSchema,
 } from '../schemas/blood-pressure.schema';
 import type { dateRangeQuerySchema } from '../schemas/common.schema';
+import {
+  assertReasonRequiredWhenIgnored,
+  withCreateStamps,
+  withUpdateStamp,
+} from './health-monitor-shared';
 
 export async function createBloodPressureMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createBloodPressureSchema>,
 ): Promise<BloodPressureMeasurement> {
-  const now = new Date().toISOString();
-  return createBloodPressureMeasurementRow(db, {
-    id,
-    ...input,
-    isDemo: true,
-    ignored: false,
-    reason: '',
-    createdAt: now,
-    updatedAt: now,
-  });
+  return createBloodPressureMeasurementRow(db, withCreateStamps(id, input));
 }
 
 export async function updateBloodPressureMeasurement(
@@ -35,10 +31,8 @@ export async function updateBloodPressureMeasurement(
   id: string,
   input: z.infer<typeof updateBloodPressureSchema>,
 ): Promise<BloodPressureMeasurement | undefined> {
-  return updateBloodPressureMeasurementRow(db, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  assertReasonRequiredWhenIgnored(input);
+  return updateBloodPressureMeasurementRow(db, id, withUpdateStamp(input));
 }
 
 export async function listBloodPressureMeasurements(
