@@ -44,6 +44,10 @@ Resolved during planning discussion (2026-07-01):
 11. **Two separate databases** — `job-tracker-db` (one table: `job_applications`) and `health-monitor-db` (four tables: `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries`). Each database gets its own folder with its own Drizzle schema, DB client, and migrations directory. The two domains never share a database, a schema file, or a migration history.
 12. **Cloud-only D1, no local database** — all `wrangler d1` operations (migrations, seed, ad-hoc queries) run against the cloud database using **`--remote`**. Note: Wrangler has no `--global` flag — the two options are `--local` (a local SQLite emulation file) and `--remote` (the actual Cloudflare-hosted D1 instance). Since local DBs are explicitly out, every command in this plan uses `--remote`, and `wrangler dev` also runs against the remote D1 bindings (`wrangler dev --remote`) rather than a local emulation, so development always exercises the real cloud database.
 13. **Seed via `seed.sql`, not a TS script** — each database folder contains a `seed.sql` fixture file (not the `scripts/seed.ts` + `tsx` approach generically suggested in `development.md`). Seeding principle: for every table in that database, first `DELETE FROM <table> WHERE is_demo = 1`, then `INSERT` the fixture demo rows. This makes seeding idempotent/repeatable without touching any non-demo data that might exist in the same tables. Executed via `wrangler d1 execute <db-name> --remote --file=<path-to-seed.sql>`.
+14. **Worker name** — `platform-api` (matches repo/project name).
+15. **Compatibility date** — `2026-07-01` (project start date).
+16. **ESLint config format** — flat config (`eslint.config.js`, ESLint 9+), not legacy `.eslintrc.json`. Note: the repo was fully reset before this plan's execution started, so there is no pre-existing `.eslintrc`/`.prettierrc`/`package.json`/`tsconfig.json` to "verify" as Section 1 originally assumed — all of it is created fresh.
+17. **Seed sequencing** — Seed Data moves to run right after Section 2 (Database Schema), instead of after Routes/Middleware. Seeding has no actual dependency on the application code layers (Validation, Repositories, Services, Routes, Middleware) — `seed.sql` is applied directly via `wrangler d1 execute --file=...` and only requires that the tables already exist. Running it immediately after migrations lets the database carry realistic demo data through the rest of implementation, so manual testing against real-looking data is possible from Section 4 onward instead of waiting until the end.
 
 ---
 
@@ -51,25 +55,26 @@ Resolved during planning discussion (2026-07-01):
 
 Reference: `architecture.md`, `development.md`, `deployment.md`
 
-- [ ] Initialize `package.json` with dependencies: `hono`, `zod`, `drizzle-orm`, `drizzle-kit`, `wrangler`, dev deps: `typescript`, `tsx`, `eslint`, `prettier`, `@cloudflare/workers-types`
-- [ ] Create `tsconfig.json` targeting Workers runtime
-- [ ] Create `wrangler.jsonc` defining:
+- [x] Initialize `package.json` with dependencies: `hono`, `zod`, `drizzle-orm`, `drizzle-kit`, `wrangler`, dev deps: `typescript`, `tsx`, `eslint`, `prettier`, `@cloudflare/workers-types`
+- [x] Create `tsconfig.json` targeting Workers runtime
+- [x] Create `wrangler.jsonc` defining:
   - Worker name
   - compatibility date
   - **two** D1 bindings: e.g. `JOB_TRACKER_DB` → `job-tracker-db`, `HEALTH_MONITOR_DB` → `health-monitor-db`
-- [ ] Create Cloudflare Worker (`wrangler.jsonc` + `src/index.ts` entrypoint)
-- [ ] Create the two Cloudflare D1 databases:
+- [x] Create Cloudflare Worker (`wrangler.jsonc` + `src/index.ts` entrypoint)
+- [x] Create the two Cloudflare D1 databases:
   ```bash
   wrangler d1 create job-tracker-db
   wrangler d1 create health-monitor-db
   ```
   Record both database IDs in `wrangler.jsonc`, one per binding.
-- [ ] Configure Drizzle with **two independent configs**, one per database:
+  Created: `job-tracker-db` = `148da606-715a-477a-8988-106fd2c0b18c`, `health-monitor-db` = `45d37615-ed40-4dab-a544-7c39440fb15a` (region EEUR).
+- [x] Configure Drizzle with **two independent configs**, one per database:
   - `drizzle.job-tracker.config.ts` → schema `src/db/job-tracker/schema.ts`, migrations out dir `src/db/job-tracker/migrations`, binding `JOB_TRACKER_DB`
   - `drizzle.health-monitor.config.ts` → schema `src/db/health-monitor/schema.ts`, migrations out dir `src/db/health-monitor/migrations`, binding `HEALTH_MONITOR_DB`
-- [ ] Set up `.eslintrc`, `.prettierrc` (already present in repo — verify they match project conventions)
-- [ ] Set up `.env.example` documenting any local-only variables (none required for V1 besides the two D1 bindings)
-- [ ] Scaffold project structure with **two independent database folders**, one per domain — no shared schema or client between them:
+- [x] Set up `eslint.config.js` (flat config), `.prettierrc` — created fresh, repo has none of this yet (Decision #16)
+- [x] Set up `.env.example` documenting any local-only variables (none required for V1 besides the two D1 bindings)
+- [x] Scaffold project structure with **two independent database folders**, one per domain — no shared schema or client between them:
   ```text
   src/
   ├── app.ts
@@ -92,11 +97,11 @@ Reference: `architecture.md`, `development.md`, `deployment.md`
   ├── middleware/
   └── utils/
   ```
-- [ ] Implement `src/app.ts` — Hono app instance, mounts all routers, global middleware (error handler, logging, CORS)
-- [ ] Implement `src/index.ts` — Worker entrypoint exporting `fetch`
-- [ ] Implement `src/db/job-tracker/client.ts` — Drizzle client bound to the `JOB_TRACKER_DB` binding
-- [ ] Implement `src/db/health-monitor/client.ts` — Drizzle client bound to the `HEALTH_MONITOR_DB` binding
-- [ ] Local development runs against the cloud databases, not a local emulation: `wrangler dev --remote`
+- [x] Implement `src/app.ts` — Hono app instance (routers/global middleware are added in Sections 6–7, not part of infrastructure)
+- [x] Implement `src/index.ts` — Worker entrypoint exporting `fetch`
+- [x] Implement `src/db/job-tracker/client.ts` — Drizzle client bound to the `JOB_TRACKER_DB` binding (schema-less for now; `schema.ts` lands in Section 2)
+- [x] Implement `src/db/health-monitor/client.ts` — Drizzle client bound to the `HEALTH_MONITOR_DB` binding (schema-less for now; `schema.ts` lands in Section 2)
+- [x] Local development runs against the cloud databases, not a local emulation: `wrangler dev --remote` — smoke-tested, Worker boots with both D1 bindings attached and responds over HTTP
 
 ---
 
@@ -158,119 +163,11 @@ Each database has its own, independent migration history — generated and appli
 
 ---
 
-# 3. Validation (Zod schemas)
+# 3. Seed Data
 
-Reference: `development.md`, `models.md`, `api.md`
+Reference: `development.md`, Decision #13, Decision #17 (sequencing)
 
-For each resource, three schema kinds:
-
-- [ ] **Create schema** (`POST` body) — excludes server-managed fields (`id`, `createdAt`, `updatedAt`, `isDemo`, and for Health Monitor also `ignored`/`reason`); for Job Tracker, `currency` defaults to `"USD"` when omitted and `remoteType` is validated against the enum `REMOTE` | `HYBRID` | `OFFICE`
-- [ ] **Update schema** (`PATCH` body) — all fields optional, plus the ignore/unignore pair (`ignored`, `reason`) for Health Monitor
-- [ ] **Query schema** — per-resource query params:
-  - Job Tracker: `page`, `limit`, `status`, `company`, `search`
-  - Health Monitor (all 4 resources + dashboard): `date_from`, `date_to`
-- [ ] **Path param schema**: `id` (string, non-empty) for all `:id` routes
-
-Cross-field validation (implemented as Zod `.refine()` or in the service layer — decide during implementation):
-
-- [ ] Job Tracker: `salaryMin <= salaryMax`, `appliedAt <= nextFollowUpAt`
-- [ ] Blood Pressure: `systolic > diastolic`, `pulse > 0`
-- [ ] Glucose / Weight: `value > 0`
-- [ ] Symptom: `intensity` between 1 and 10 inclusive
-
-- [ ] Wire a global validation-error handler that maps Zod errors to the documented `400` error response shape
-
----
-
-# 4. Repositories
-
-Reference: `development.md` (repositories only execute queries, no business rules)
-
-- [ ] `job-applications.repository.ts` — uses the `src/db/job-tracker/client.ts` Drizzle client (bound to `JOB_TRACKER_DB` / `job-tracker-db`)
-  - `list({ page, limit, status, company, search })` → rows + total count
-  - `findById(id)`
-  - `create(data)`
-  - `update(id, data)`
-  - `delete(id)`
-  - `getMeta()` helper queries: distinct companies, distinct statuses in use, aggregate counts for stats
-- [ ] `glucose.repository.ts`, `blood-pressure.repository.ts`, `weight.repository.ts`, `symptoms.repository.ts` — all use the `src/db/health-monitor/client.ts` Drizzle client (bound to `HEALTH_MONITOR_DB` / `health-monitor-db`)
-  - `list({ dateFrom, dateTo, isDemo })`
-  - `findById(id)`
-  - `create(data)`
-  - `update(id, data)` (used for both regular updates and ignore/unignore)
-- [ ] Dashboard repository (or a composed service call) — fetch all four Health Monitor lists (same `health-monitor-db` client) filtered by the same date range. No cross-database joins are needed anywhere in V1 since Job Tracker and Health Monitor never reference each other's data.
-
----
-
-# 5. Services (business logic)
-
-Reference: `development.md`
-
-- [ ] `job-applications.service.ts`
-  - Sets `isDemo: true` on every created record (no auth in V1 — see Decision #10)
-  - Computes `JobsStats` (`total`, `interviews`, `interviewRate`, `offers`, `offerRate`, `rejections`, `rejectionRate`) per rules in `api.md`
-    - interview-related statuses: `SCREENING`, `TECHNICAL_INTERVIEW`, `FINAL_INTERVIEW`
-  - Normalizes pagination params (`page`, `limit`, default/max enforcement: `limit <= 100`)
-  - Validates cross-field rules not expressible in Zod alone (if any deferred from schema layer)
-- [ ] `glucose.service.ts`, `blood-pressure.service.ts`, `weight.service.ts`, `symptoms.service.ts`
-  - Sets `isDemo: true` on every created record
-  - Handles ignore/restore semantics
-- [ ] `dashboard.service.ts`
-  - Aggregates the four Health Monitor services into `DashboardData`
-
----
-
-# 6. Routes (HTTP layer)
-
-Reference: `api.md` (exact contract), `development.md` (routes are thin — validate, call service, respond)
-
-## 6.1 Health
-
-- [ ] `GET /health` → `{ data: { status: "ok" } }`, no auth, no DB access unless required, fast
-
-## 6.2 Job Tracker
-
-- [ ] `GET /jobs` — query: `page`, `limit`, `status`, `company`, `search` → paginated list + `meta`; `search` matches `company`/`position`/`source`/`notes` via SQL `LIKE '%term%'`
-- [ ] `GET /jobs/:id` → single resource or `404`
-- [ ] `POST /jobs` → route generates `const id = crypto.randomUUID()`, passes `{ id, ...validatedBody }` to the service → `201` + created resource; rejects server-managed fields present in body (or silently strips them — decide: **reject with 400** is more explicit and safer)
-- [ ] `PATCH /jobs/:id` → partial update, all fields optional
-- [ ] `DELETE /jobs/:id` → physical delete, `{ data: { success: true } }`
-- [ ] `GET /jobs/meta` → `{ companies, statuses, stats }`
-
-## 6.3 Health Monitor
-
-For each of Glucose, Blood Pressure, Weight, Symptoms:
-
-- [ ] `GET /<resource>` — query: `date_from`, `date_to`, no pagination
-- [ ] `POST /<resource>` — route generates `id` via `crypto.randomUUID()`, passes it to the service alongside the validated body
-- [ ] `PATCH /<resource>/:id` — update fields, or ignore/restore via `{ ignored, reason }`
-
-## 6.4 Dashboard
-
-- [ ] `GET /dashboard` — query: `date_from`, `date_to` → aggregated `DashboardData`
-
-## 6.5 Cross-cutting route concerns
-
-- [ ] Consistent response envelope (`data` / `data + meta` / `error`) enforced via a shared response helper in `utils/`
-- [ ] 404 handling for unknown IDs across all resources
-- [ ] 400 handling for validation failures across all resources
-- [ ] 500 handler that never leaks internals (stack traces, SQL errors) in responses, but does log them
-
----
-
-# 7. Middleware
-
-- [ ] Global error-handling middleware (catches thrown errors, maps to `{ error: { message, details } }`)
-- [ ] Logging middleware (method, path, status, duration — no sensitive data)
-- [ ] CORS middleware — `Access-Control-Allow-Origin: *`, no origin restriction (safe: auth uses `Authorization: Bearer`, not cookies)
-
----
-
-# 8. Seed Data
-
-Reference: `development.md`, Decision #13
-
-Seed is plain SQL, not a TypeScript script, and lives next to each database's schema.
+Seed is plain SQL, not a TypeScript script, and lives next to each database's schema. Runs immediately after the migrations in Section 2 are applied — no dependency on Sections 4–8 below.
 
 - [ ] `src/db/job-tracker/seed.sql`
   ```sql
@@ -303,6 +200,114 @@ Seed is plain SQL, not a TypeScript script, and lives next to each database's sc
   ```
 - [ ] Add matching `package.json` scripts, e.g. `db:seed:job-tracker`, `db:seed:health-monitor` (and optionally a combined `db:seed` running both)
 - [ ] Seed is always an explicit, manual command — never runs automatically as part of deployment
+
+---
+
+# 4. Validation (Zod schemas)
+
+Reference: `development.md`, `models.md`, `api.md`
+
+For each resource, three schema kinds:
+
+- [ ] **Create schema** (`POST` body) — excludes server-managed fields (`id`, `createdAt`, `updatedAt`, `isDemo`, and for Health Monitor also `ignored`/`reason`); for Job Tracker, `currency` defaults to `"USD"` when omitted and `remoteType` is validated against the enum `REMOTE` | `HYBRID` | `OFFICE`
+- [ ] **Update schema** (`PATCH` body) — all fields optional, plus the ignore/unignore pair (`ignored`, `reason`) for Health Monitor
+- [ ] **Query schema** — per-resource query params:
+  - Job Tracker: `page`, `limit`, `status`, `company`, `search`
+  - Health Monitor (all 4 resources + dashboard): `date_from`, `date_to`
+- [ ] **Path param schema**: `id` (string, non-empty) for all `:id` routes
+
+Cross-field validation (implemented as Zod `.refine()` or in the service layer — decide during implementation):
+
+- [ ] Job Tracker: `salaryMin <= salaryMax`, `appliedAt <= nextFollowUpAt`
+- [ ] Blood Pressure: `systolic > diastolic`, `pulse > 0`
+- [ ] Glucose / Weight: `value > 0`
+- [ ] Symptom: `intensity` between 1 and 10 inclusive
+
+- [ ] Wire a global validation-error handler that maps Zod errors to the documented `400` error response shape
+
+---
+
+# 5. Repositories
+
+Reference: `development.md` (repositories only execute queries, no business rules)
+
+- [ ] `job-applications.repository.ts` — uses the `src/db/job-tracker/client.ts` Drizzle client (bound to `JOB_TRACKER_DB` / `job-tracker-db`)
+  - `list({ page, limit, status, company, search })` → rows + total count
+  - `findById(id)`
+  - `create(data)`
+  - `update(id, data)`
+  - `delete(id)`
+  - `getMeta()` helper queries: distinct companies, distinct statuses in use, aggregate counts for stats
+- [ ] `glucose.repository.ts`, `blood-pressure.repository.ts`, `weight.repository.ts`, `symptoms.repository.ts` — all use the `src/db/health-monitor/client.ts` Drizzle client (bound to `HEALTH_MONITOR_DB` / `health-monitor-db`)
+  - `list({ dateFrom, dateTo, isDemo })`
+  - `findById(id)`
+  - `create(data)`
+  - `update(id, data)` (used for both regular updates and ignore/unignore)
+- [ ] Dashboard repository (or a composed service call) — fetch all four Health Monitor lists (same `health-monitor-db` client) filtered by the same date range. No cross-database joins are needed anywhere in V1 since Job Tracker and Health Monitor never reference each other's data.
+
+---
+
+# 6. Services (business logic)
+
+Reference: `development.md`
+
+- [ ] `job-applications.service.ts`
+  - Sets `isDemo: true` on every created record (no auth in V1 — see Decision #10)
+  - Computes `JobsStats` (`total`, `interviews`, `interviewRate`, `offers`, `offerRate`, `rejections`, `rejectionRate`) per rules in `api.md`
+    - interview-related statuses: `SCREENING`, `TECHNICAL_INTERVIEW`, `FINAL_INTERVIEW`
+  - Normalizes pagination params (`page`, `limit`, default/max enforcement: `limit <= 100`)
+  - Validates cross-field rules not expressible in Zod alone (if any deferred from schema layer)
+- [ ] `glucose.service.ts`, `blood-pressure.service.ts`, `weight.service.ts`, `symptoms.service.ts`
+  - Sets `isDemo: true` on every created record
+  - Handles ignore/restore semantics
+- [ ] `dashboard.service.ts`
+  - Aggregates the four Health Monitor services into `DashboardData`
+
+---
+
+# 7. Routes (HTTP layer)
+
+Reference: `api.md` (exact contract), `development.md` (routes are thin — validate, call service, respond)
+
+## 7.1 Health
+
+- [ ] `GET /health` → `{ data: { status: "ok" } }`, no auth, no DB access unless required, fast
+
+## 7.2 Job Tracker
+
+- [ ] `GET /jobs` — query: `page`, `limit`, `status`, `company`, `search` → paginated list + `meta`; `search` matches `company`/`position`/`source`/`notes` via SQL `LIKE '%term%'`
+- [ ] `GET /jobs/:id` → single resource or `404`
+- [ ] `POST /jobs` → route generates `const id = crypto.randomUUID()`, passes `{ id, ...validatedBody }` to the service → `201` + created resource; rejects server-managed fields present in body (or silently strips them — decide: **reject with 400** is more explicit and safer)
+- [ ] `PATCH /jobs/:id` → partial update, all fields optional
+- [ ] `DELETE /jobs/:id` → physical delete, `{ data: { success: true } }`
+- [ ] `GET /jobs/meta` → `{ companies, statuses, stats }`
+
+## 7.3 Health Monitor
+
+For each of Glucose, Blood Pressure, Weight, Symptoms:
+
+- [ ] `GET /<resource>` — query: `date_from`, `date_to`, no pagination
+- [ ] `POST /<resource>` — route generates `id` via `crypto.randomUUID()`, passes it to the service alongside the validated body
+- [ ] `PATCH /<resource>/:id` — update fields, or ignore/restore via `{ ignored, reason }`
+
+## 7.4 Dashboard
+
+- [ ] `GET /dashboard` — query: `date_from`, `date_to` → aggregated `DashboardData`
+
+## 7.5 Cross-cutting route concerns
+
+- [ ] Consistent response envelope (`data` / `data + meta` / `error`) enforced via a shared response helper in `utils/`
+- [ ] 404 handling for unknown IDs across all resources
+- [ ] 400 handling for validation failures across all resources
+- [ ] 500 handler that never leaks internals (stack traces, SQL errors) in responses, but does log them
+
+---
+
+# 8. Middleware
+
+- [ ] Global error-handling middleware (catches thrown errors, maps to `{ error: { message, details } }`)
+- [ ] Logging middleware (method, path, status, duration — no sensitive data)
+- [ ] CORS middleware — `Access-Control-Allow-Origin: *`, no origin restriction (safe: auth uses `Authorization: Bearer`, not cookies)
 
 ---
 

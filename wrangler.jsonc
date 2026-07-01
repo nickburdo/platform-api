@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "platform-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": {
+    "enabled": true,
+  },
+  "d1_databases": [
+    {
+      "binding": "JOB_TRACKER_DB",
+      "database_name": "job-tracker-db",
+      "database_id": "148da606-715a-477a-8988-106fd2c0b18c",
+    },
+    {
+      "binding": "HEALTH_MONITOR_DB",
+      "database_name": "health-monitor-db",
+      "database_id": "45d37615-ed40-4dab-a544-7c39440fb15a",
+    },
+  ],
+}
