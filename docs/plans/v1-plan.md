@@ -48,6 +48,17 @@ Resolved during planning discussion (2026-07-01):
 15. **Compatibility date** — `2026-07-01` (project start date).
 16. **ESLint config format** — flat config (`eslint.config.js`, ESLint 9+), not legacy `.eslintrc.json`. Note: the repo was fully reset before this plan's execution started, so there is no pre-existing `.eslintrc`/`.prettierrc`/`package.json`/`tsconfig.json` to "verify" as Section 1 originally assumed — all of it is created fresh.
 17. **Seed sequencing** — Seed Data moves to run right after Section 2 (Database Schema), instead of after Routes/Middleware. Seeding has no actual dependency on the application code layers (Validation, Repositories, Services, Routes, Middleware) — `seed.sql` is applied directly via `wrangler d1 execute --file=...` and only requires that the tables already exist. Running it immediately after migrations lets the database carry realistic demo data through the rest of implementation, so manual testing against real-looking data is possible from Section 4 onward instead of waiting until the end.
+18. **Seed data source: real Prisma fixtures** — the user provided real reference data from a previous Postgres/Prisma implementation of the same product, under `docs/seed/job-tracker/` (`schema.prisma`, `seed.ts`) and `docs/seed/health-monitor/` (`schema.prisma`, `seed.mjs`). These are used as the actual content for `seed.sql` in Section 3, adapted as follows:
+    - IDs: the Prisma source has none checked in (Prisma generates `cuid()` at insert time) — fixed, hardcoded UUIDs are generated and written directly into `seed.sql` (per Decision #13).
+    - Column naming: mapped to our `snake_case` convention (Decision #2); the Prisma field `ignore` becomes our `ignored` (same boolean semantics, renamed for API consistency with `api.md`).
+    - `updated_at`: not present in the Prisma source (it only tracks `createdAt`) — seeded rows set `updated_at = created_at`.
+    - `SymptomEntry` in the Prisma source has no `ignore`/`reason` fields at all — seeded rows default to `ignored = 0, reason = ''`, since our schema (Decision below, Section 2.2) requires these columns on every Health Monitor table regardless.
+    - `remoteType`: source uses free-text `'Remote'` / `'Hybrid'` / `'On-site'` — mapped to our enum (Decision #6) as `REMOTE` / `HYBRID` / `OFFICE` respectively.
+    - Relationships: none exist in the source schemas, so nothing to drop.
+19. **Glucose model changes shape: `fastingValue`/`afterMealValue` instead of a single `value`** — the real Prisma source tracks glucose readings as two separate nullable fields (`fastingValue`, `afterMealValue`), with **exactly one of the two ever populated per record**, never both, never neither. This is more clinically meaningful than a single undifferentiated `value` and reflects actual usage, so the V1 data model changes to match, **before** any migration has been generated (Section 2 hasn't run yet, so this costs nothing to change now):
+    - `glucose_measurements` gets `fasting_value` (nullable number) and `after_meal_value` (nullable number) instead of `value`
+    - New cross-field validation rule: exactly one of `fastingValue`/`afterMealValue` must be present on create (both present or both absent is a `400`); whichever is present must be `> 0`
+    - `models.md` and `api.md` need updating to reflect this (tracked in Documentation Updates)
 
 ---
 
@@ -125,7 +136,8 @@ All four tables additionally get:
 - `reason` (string, nullable)
 
 - [ ] `glucose_measurements`
-  - `measured_at`, `value` (number, `value > 0`), `note` (nullable)
+  - `measured_at`, `fasting_value` (number, nullable), `after_meal_value` (number, nullable), `note` (nullable)
+  - constraint (service-level, per Decision #19): exactly one of `fasting_value`/`after_meal_value` is present, and it must be `> 0`
 - [ ] `blood_pressure_measurements`
   - `measured_at`, `systolic`, `diastolic`, `pulse`, `note` (nullable)
   - constraint: `systolic > diastolic`, `pulse > 0` (enforced in Zod/service layer, not DB — D1/SQLite has limited CHECK support via Drizzle)
@@ -220,7 +232,8 @@ Cross-field validation (implemented as Zod `.refine()` or in the service layer �
 
 - [ ] Job Tracker: `salaryMin <= salaryMax`, `appliedAt <= nextFollowUpAt`
 - [ ] Blood Pressure: `systolic > diastolic`, `pulse > 0`
-- [ ] Glucose / Weight: `value > 0`
+- [ ] Glucose: exactly one of `fastingValue`/`afterMealValue` present (not both, not neither), and it must be `> 0` (Decision #19)
+- [ ] Weight: `value > 0`
 - [ ] Symptom: `intensity` between 1 and 10 inclusive
 
 - [ ] Wire a global validation-error handler that maps Zod errors to the documented `400` error response shape
@@ -366,6 +379,8 @@ There is no separate "local" environment step anywhere in this flow — developm
 
 - [ ] `models.md` — change `JobApplication.remoteType` from a free string to the enum `REMOTE` | `HYBRID` | `OFFICE`; document `currency` default (`"USD"`)
 - [ ] `api.md` — reflect the same `remoteType`/`currency` changes in request/response examples
+- [ ] `models.md` — change `GlucoseMeasurement`: replace `value` with `fastingValue` (nullable) and `afterMealValue` (nullable); document the "exactly one of the two" validation rule (Decision #19)
+- [ ] `api.md` — update the Glucose resource's request/response examples to use `fastingValue`/`afterMealValue` instead of `value`
 - [ ] `architecture.md` — the "High Level Architecture" diagram and the Technology Stack table currently describe a single "Cloudflare D1 Database." Needs updating to show two separate D1 databases (`job-tracker-db`, `health-monitor-db`), one per bounded domain, with no cross-database access.
 - [ ] `development.md` — the "Database," "Migrations," "Seed Data," and "Recommended Scripts" sections currently describe one database (`platform-api`), a single `--local`/`--remote` migration pair, and a `scripts/seed.ts` + `tsx` seed approach. All of this needs rewriting to reflect: two databases, cloud-only workflow (`--remote` everywhere, no `--local`), and `seed.sql`-per-database instead of a TS seed script.
 - [ ] `deployment.md` — the "Database" and "Seed Data" sections need the same two-database, remote-only, `seed.sql`-based rewrite.

@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model GlucoseMeasurement {
+  id         String   @id @default(cuid())
+  measuredAt DateTime
+
+  fastingValue   Float?
+  afterMealValue Float?
+  ignore         Boolean @default(false)
+
+  note   String?
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  isDemo Boolean @default(false)
+
+  @@index([measuredAt])
+  @@map("health_monitor_glucose_measurement")
+}
+
+model BloodPressureMeasurement {
+  id         String   @id @default(cuid())
+  measuredAt DateTime
+
+  systolic  Int?
+  diastolic Int?
+  pulse     Int?
+  ignore    Boolean @default(false)
+
+  note   String?
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  isDemo Boolean @default(false)
+
+  @@index([measuredAt])
+  @@map("health_monitor_blood_pressure_measurement")
+}
+
+model WeightMeasurement {
+  id         String   @id @default(cuid())
+  measuredAt DateTime
+
+  value  Float?
+  ignore Boolean @default(false)
+
+  note   String?
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  isDemo Boolean @default(false)
+
+  @@index([measuredAt])
+  @@map("health_monitor_weight_measurement")
+}
+
+model SymptomEntry {
+  id         String   @id @default(cuid())
+  happenedAt DateTime
+
+  type      String
+  intensity Int?
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  isDemo Boolean @default(false)
+
+  @@index([happenedAt])
+  @@index([type])
+  @@map("health_monitor_symptom_entry")
+}

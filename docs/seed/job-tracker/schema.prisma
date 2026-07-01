@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobApplicationStatus {
+  SAVED
+  APPLIED
+  SCREENING
+  TECHNICAL_INTERVIEW
+  FINAL_INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+  ARCHIVED
+}
+
+model JobApplication {
+  id             String               @id @default(cuid())
+  company        String
+  position       String
+  vacancyUrl     String               @unique
+  status         JobApplicationStatus @default(SAVED)
+  source         String
+  salaryMin      Int?
+  salaryMax      Int?
+  currency       String?
+  location       String?
+  remoteType     String?
+  notes          String?
+  appliedAt      DateTime?
+  nextFollowUpAt DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  isDemo Boolean @default(false)
+
+  @@index([status])
+  @@index([company])
+  @@index([createdAt])
+
+  @@map("job_tracker_job_applications")
+}
