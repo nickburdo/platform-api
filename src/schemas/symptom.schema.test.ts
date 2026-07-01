@@ -49,4 +49,8 @@ describe('updateSymptomSchema', () => {
   it('rejects out-of-range intensity on update', () => {
     expect(updateSymptomSchema.safeParse({ intensity: 15 }).success).toBe(false);
   });
+
+  it('rejects ignored: true without a reason', () => {
+    expect(updateSymptomSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
 });

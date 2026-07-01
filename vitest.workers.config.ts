@@ -17,7 +17,7 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ['src/**/*.repo.test.ts'],
+    include: ['src/**/*.repo.test.ts', 'src/**/*.service.test.ts'],
     setupFiles: ['./src/db/test-setup.ts'],
   },
 });

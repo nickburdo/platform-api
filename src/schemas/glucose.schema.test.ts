@@ -58,6 +58,14 @@ describe('updateGlucoseSchema', () => {
     expect(updateGlucoseSchema.safeParse({ ignored: false, reason: '' }).success).toBe(true);
   });
 
+  it('rejects ignored: true without a reason', () => {
+    expect(updateGlucoseSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
+
+  it('rejects ignored: true with an empty reason', () => {
+    expect(updateGlucoseSchema.safeParse({ ignored: true, reason: '' }).success).toBe(false);
+  });
+
   it('accepts updating fastingValue alone', () => {
     expect(updateGlucoseSchema.safeParse({ fastingValue: 95 }).success).toBe(true);
   });

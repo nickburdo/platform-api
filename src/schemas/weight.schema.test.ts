@@ -35,4 +35,8 @@ describe('updateWeightSchema', () => {
   it('rejects a non-positive value on update', () => {
     expect(updateWeightSchema.safeParse({ value: 0 }).success).toBe(false);
   });
+
+  it('rejects ignored: true without a reason', () => {
+    expect(updateWeightSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
 });

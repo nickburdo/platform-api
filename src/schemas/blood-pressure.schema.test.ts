@@ -91,4 +91,8 @@ describe('updateBloodPressureSchema', () => {
       updateBloodPressureSchema.safeParse({ ignored: true, reason: 'Wrong cuff' }).success,
     ).toBe(true);
   });
+
+  it('rejects ignored: true without a reason', () => {
+    expect(updateBloodPressureSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
 });

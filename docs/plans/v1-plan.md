@@ -77,6 +77,8 @@ Resolved during planning discussion (2026-07-01):
     - `common.schema.ts`: the `date_from`/`date_to` regex only checked digit-grouping shape, so calendar-invalid dates (month 13, Feb 30, Feb 29 on a non-leap year) passed validation and silently produced wrong query bounds instead of a `400`. Fixed by adding a round-trip-through-`Date` refine.
     - Deduplicated the four near-identical Health Monitor `buildFilters` functions into one shared helper (`src/utils/repository-filters.ts`), and the two identical job-applications/blood-pressure cross-field `{ check, options }` refine rules into one shared `common.schema.ts` helper (glucose's rule stayed separate — its shape is genuinely different, per the review's own verification).
     - `getJobApplicationsMeta(db, isDemo?: boolean)` took `isDemo` as a bare positional argument while every other list function takes it as a `params` object field — changed to `getJobApplicationsMeta(db, params?: { isDemo?: boolean })` for consistency.
+26. **`reason` is required (non-empty) whenever `ignored: true`** — `api.md`'s ignore/unignore examples always pair `ignored: true` with a real `reason` and `ignored: false` with `reason: ""`, but nothing enforced this relationship. User decision when starting Section 6: make it required. Added as a shared `reasonRequiredWhenIgnoredRule` in `common.schema.ts`, applied to all four Health Monitor update schemas (glucose, blood-pressure, weight, symptom). No constraint on `reason` when `ignored` is false/absent — restoring with `reason: ""` remains the client's choice, not something this rule enforces.
+27. **`dashboard.service.ts` delegates to `dashboard.repository.ts` directly, not the four sibling services** — the plan originally described the dashboard service as "aggregating the four Health Monitor services," but in V1 those services add no read-time transformation over their repositories (no `isDemo` scoping happens on reads yet, per Decision #10) — composing through them would be a redundant extra layer with byte-identical behavior to calling the already-built, already-tested `dashboard.repository.ts` composition directly. Revisit if a future version's services start adding real read-time logic (e.g. V2 auth-based scoping), at which point the dashboard service should switch to composing the sibling services so that logic isn't bypassed.
 
 ---
 
@@ -271,17 +273,22 @@ Reference: `development.md` (repositories only execute queries, no business rule
 
 Reference: `development.md`
 
-- [ ] `job-applications.service.ts`
-  - Sets `isDemo: true` on every created record (no auth in V1 — see Decision #10)
-  - Computes `JobsStats` (`total`, `interviews`, `interviewRate`, `offers`, `offerRate`, `rejections`, `rejectionRate`) per rules in `api.md`
+- [x] `job-applications.service.ts`
+  - Sets `isDemo: true` on every created record (no auth in V1 — see Decision #10), stamps `createdAt`/`updatedAt`
+  - `listJobApplications` returns `{ rows, meta: { page, limit, total, totalPages } }`, matching the `api.md` response envelope directly
+  - Computes `JobsStats` (`total`, `interviews`, `interviewRate`, `offers`, `offerRate`, `rejections`, `rejectionRate`) per rules in `api.md` from the repository's raw `statusCounts`
     - interview-related statuses: `SCREENING`, `TECHNICAL_INTERVIEW`, `FINAL_INTERVIEW`
-  - Normalizes pagination params (`page`, `limit`, default/max enforcement: `limit <= 100`)
-  - Validates cross-field rules not expressible in Zod alone (if any deferred from schema layer)
-- [ ] `glucose.service.ts`, `blood-pressure.service.ts`, `weight.service.ts`, `symptoms.service.ts`
-  - Sets `isDemo: true` on every created record
-  - Handles ignore/restore semantics
-- [ ] `dashboard.service.ts`
-  - Aggregates the four Health Monitor services into `DashboardData`
+    - rates are `0` (not `NaN`) when `total` is `0` — verified with a dedicated test
+  - Pagination default/max enforcement (`limit <= 100`) is already fully handled by `paginationQuerySchema` (Section 4) — nothing left for the service to normalize
+  - No cross-field rules deferred from the schema layer — Section 4 + the code-review fixes already cover everything (salary range, follow-up ordering)
+  - 7 tests (`.service.test.ts`, real D1)
+- [x] `glucose.service.ts`, `blood-pressure.service.ts`, `weight.service.ts`, `symptom.service.ts`
+  - Sets `isDemo: true`, `ignored: false`, `reason: ''` on every created record, stamps `createdAt`/`updatedAt`
+  - Ignore/restore semantics are just the validated patch (including `ignored`/`reason`) passed through to the repository's `update` — no special-casing needed since Decision #26's `reasonRequiredWhenIgnoredRule` already guarantees a valid `reason` by the time the service sees it
+  - 4 + 3 + 3 + 3 = 13 tests (`.service.test.ts`, real D1)
+- [x] `dashboard.service.ts`
+  - Delegates to `dashboard.repository.ts`'s existing composition rather than the four sibling services (Decision #27)
+  - 1 test (`.service.test.ts`, real D1)
 
 ---
 
@@ -346,8 +353,9 @@ Reference: `development.md`, Decision #22 (automated tests adopted)
 - [x] `src/schemas/symptom.schema.test.ts` — intensity bounds (1–10 inclusive) — 7 tests
 - [x] `src/utils/validation.test.ts` — `zodErrorToResponse()` produces the documented `{ error: { message, details } }` shape, bucketed by field — 2 tests
 - [x] `src/utils/date-range.test.ts` — end-of-day widening — 5 tests
-- [x] Repository tests (`*.repo.test.ts`, Section 5, real D1 via `@cloudflare/vitest-pool-workers`) — 34 tests across 6 files, including the Decision #25 regressions (glucose partial-update invariant, LIKE-wildcard escaping)
-- [x] Full suite green: 106 tests total (72 unit + 34 repository) across 14 files (`npm test`)
+- [x] Repository tests (`*.repo.test.ts`, Section 5, real D1 via `@cloudflare/vitest-pool-workers`) — 36 tests across 6 files, including the Decision #25 regressions (glucose partial-update invariant, LIKE-wildcard escaping)
+- [x] Service tests (`*.service.test.ts`, Section 6, real D1 via the same Workers pool) — 19 tests across 6 files
+- [x] Full suite green: 132 tests total (77 unit + 55 against real D1) across 20 files (`npm test`)
 
 ## 9.2 Manual Testing (Postman)
 

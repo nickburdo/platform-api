@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { reasonRequiredWhenIgnoredRule } from './common.schema';
 
 // List queries reuse `dateRangeQuerySchema` from common.schema.ts directly.
 
@@ -16,4 +17,5 @@ export const updateWeightSchema = z
     ignored: z.boolean().optional(),
     reason: z.string().optional(),
   })
-  .partial();
+  .partial()
+  .refine(reasonRequiredWhenIgnoredRule.check, reasonRequiredWhenIgnoredRule.options);

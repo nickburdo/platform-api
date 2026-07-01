@@ -54,3 +54,17 @@ export function optionalFieldOrderRule<TData>(
     options: { message, path },
   };
 }
+
+// Shared by every Health Monitor update schema: `reason` must be a non-empty
+// string whenever `ignored: true` is set (Decision #26). No constraint is
+// placed on `reason` when `ignored` is false/absent — restoring a record
+// sends `reason: ""` by convention (api.md), but that's the client's choice,
+// not something this rule enforces.
+export const reasonRequiredWhenIgnoredRule = {
+  check: (data: { ignored?: boolean; reason?: string }) =>
+    !data.ignored || Boolean(data.reason && data.reason.trim().length > 0),
+  options: {
+    message: 'reason is required when ignored is true',
+    path: ['reason'] as PropertyKey[],
+  },
+};

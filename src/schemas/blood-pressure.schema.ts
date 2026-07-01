@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { optionalFieldOrderRule } from './common.schema';
+import { optionalFieldOrderRule, reasonRequiredWhenIgnoredRule } from './common.schema';
 
 // List queries reuse `dateRangeQuerySchema` from common.schema.ts directly.
 
@@ -35,4 +35,5 @@ export const updateBloodPressureSchema = z
     reason: z.string().optional(),
   })
   .partial()
-  .refine(systolicOverDiastolicRule.check, systolicOverDiastolicRule.options);
+  .refine(systolicOverDiastolicRule.check, systolicOverDiastolicRule.options)
+  .refine(reasonRequiredWhenIgnoredRule.check, reasonRequiredWhenIgnoredRule.options);

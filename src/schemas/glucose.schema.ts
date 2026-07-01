@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { reasonRequiredWhenIgnoredRule } from './common.schema';
 
 // List queries reuse `dateRangeQuerySchema` from common.schema.ts directly —
 // there's no glucose-specific query parameter beyond date_from/date_to.
@@ -42,4 +43,5 @@ export const updateGlucoseSchema = z
         ? true
         : hasExactlyOneGlucoseValue(data),
     exactlyOneGlucoseValueRule,
-  );
+  )
+  .refine(reasonRequiredWhenIgnoredRule.check, reasonRequiredWhenIgnoredRule.options);
