@@ -135,20 +135,24 @@ All four tables additionally get:
 - `ignored` (boolean, default `false`)
 - `reason` (string, nullable)
 
-- [ ] `glucose_measurements`
+- [x] `glucose_measurements`
   - `measured_at`, `fasting_value` (number, nullable), `after_meal_value` (number, nullable), `note` (nullable)
   - constraint (service-level, per Decision #19): exactly one of `fasting_value`/`after_meal_value` is present, and it must be `> 0`
-- [ ] `blood_pressure_measurements`
+  - index added on `measured_at` (not explicitly listed above, but a natural consequence of every list endpoint filtering by `date_from`/`date_to`)
+- [x] `blood_pressure_measurements`
   - `measured_at`, `systolic`, `diastolic`, `pulse`, `note` (nullable)
   - constraint: `systolic > diastolic`, `pulse > 0` (enforced in Zod/service layer, not DB — D1/SQLite has limited CHECK support via Drizzle)
-- [ ] `weight_measurements`
+  - index added on `measured_at`
+- [x] `weight_measurements`
   - `measured_at`, `value` (number, `value > 0`), `note` (nullable)
-- [ ] `symptom_entries`
+  - index added on `measured_at`
+- [x] `symptom_entries`
   - `happened_at`, `type` (string), `intensity` (number, 1–10), `note` (nullable)
+  - indexes added on `happened_at` and `type`
 
 ## 2.3 `job-tracker-db` — schema: `src/db/job-tracker/schema.ts`
 
-- [ ] `job_applications` (the only table in this database)
+- [x] `job_applications` (the only table in this database)
   - `company` (required), `position` (required), `vacancy_url` (nullable)
   - `status` (enum `JobApplicationStatus`, required, default `SAVED`)
   - `source` (nullable), `salary_min` (nullable), `salary_max` (nullable)
@@ -164,14 +168,16 @@ All four tables additionally get:
 
 Each database has its own, independent migration history — generated and applied separately, always against the cloud database.
 
-- [ ] Generate: `drizzle-kit generate --config drizzle.job-tracker.config.ts` and `drizzle-kit generate --config drizzle.health-monitor.config.ts`
-- [ ] Review generated SQL by hand for both
-- [ ] Apply to the cloud database (no local target exists per Decision #12):
+- [x] Generate: `drizzle-kit generate --config drizzle.job-tracker.config.ts` and `drizzle-kit generate --config drizzle.health-monitor.config.ts`
+  - Generated: `src/db/job-tracker/migrations/0000_glorious_cammi.sql`, `src/db/health-monitor/migrations/0000_far_alice.sql`
+- [x] Review generated SQL by hand for both — matches schema exactly, no surprises
+- [x] Apply to the cloud database (no local target exists per Decision #12):
   ```bash
   wrangler d1 migrations apply job-tracker-db --remote
   wrangler d1 migrations apply health-monitor-db --remote
   ```
-- [ ] Verify schema with `wrangler d1 execute job-tracker-db --remote --command "PRAGMA table_info(job_applications)"` and the equivalent per health-monitor table
+  Required adding `migrations_dir` per D1 binding in `wrangler.jsonc` (`src/db/job-tracker/migrations`, `src/db/health-monitor/migrations`) — `wrangler d1 migrations apply` otherwise looks for a single top-level `migrations/` folder, which doesn't fit our two-database-per-folder layout.
+- [x] Verify schema with `wrangler d1 execute job-tracker-db --remote --command "PRAGMA table_info(job_applications)"` and the equivalent per health-monitor table — all columns confirmed present in the cloud databases
 
 ---
 

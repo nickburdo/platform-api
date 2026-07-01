@@ -11,11 +11,13 @@
       "binding": "JOB_TRACKER_DB",
       "database_name": "job-tracker-db",
       "database_id": "148da606-715a-477a-8988-106fd2c0b18c",
+      "migrations_dir": "src/db/job-tracker/migrations",
     },
     {
       "binding": "HEALTH_MONITOR_DB",
       "database_name": "health-monitor-db",
       "database_id": "45d37615-ed40-4dab-a544-7c39440fb15a",
+      "migrations_dir": "src/db/health-monitor/migrations",
     },
   ],
 }

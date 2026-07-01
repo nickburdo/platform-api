@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ['node_modules/**', 'dist/**', '.wrangler/**', 'src/db/*/migrations/**'],
+    ignores: ['node_modules/**', 'dist/**', '.wrangler/**', 'src/db/*/migrations/**', 'docs/**'],
   },
   {
     rules: {
