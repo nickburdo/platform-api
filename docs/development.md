@@ -9,7 +9,7 @@
 See also:
 
 - `architecture.md`
-- `data-models.md`
+- `models.md`
 - `api.md`
 - `deployment.md`
 
@@ -461,7 +461,7 @@ To restore:
 
 Every new endpoint should follow the same workflow.
 
-1. Update `data-models.md`.
+1. Update `models.md`.
 2. Update `api.md`.
 3. Update Drizzle schema.
 4. Create Zod validation schema.
@@ -789,8 +789,8 @@ Platform
 This document should be read together with:
 
 - `architecture.md`
-- `versions.md`
-- `data-models.md`
+- `roadmap.md`
+- `models.md`
 - `api.md`
 - `deployment.md`
 - `decisions.md`

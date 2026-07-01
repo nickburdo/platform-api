@@ -13,8 +13,8 @@ docs/
 
 ├── index.md
 ├── architecture.md
-├── versions.md
-├── data-models.md
+├── roadmap.md
+├── models.md
 ├── api.md
 ├── development.md
 ├── deployment.md
@@ -67,7 +67,7 @@ Read this document first to understand how the system is designed.
 
 ---
 
-## versions.md
+## roadmap.md
 
 Defines the project roadmap.
 
@@ -82,7 +82,7 @@ Use this document to understand what should be implemented next.
 
 ---
 
-## data-models.md
+## models.md
 
 Defines all business entities used by the Platform API.
 
@@ -225,8 +225,8 @@ Each aspect of the project has a single authoritative document.
 | Topic                   | Document          |
 | ----------------------- | ----------------- |
 | Architecture            | `architecture.md` |
-| Roadmap                 | `versions.md`     |
-| Data Models             | `data-models.md`  |
+| Roadmap                 | `roadmap.md`     |
+| Data Models             | `models.md`  |
 | REST API                | `api.md`          |
 | Development             | `development.md`  |
 | Deployment              | `deployment.md`   |

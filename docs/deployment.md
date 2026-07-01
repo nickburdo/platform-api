@@ -10,7 +10,7 @@ See also:
 
 - `architecture.md`
 - `development.md`
-- `versions.md`
+- `roadmap.md`
 
 ---
 
@@ -412,7 +412,7 @@ If production becomes unavailable:
 
 - `architecture.md`
 - `development.md`
-- `versions.md`
+- `roadmap.md`
 - `api.md`
-- `data-models.md`
+- `models.md`
 - `decisions.md`

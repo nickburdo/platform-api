@@ -9,7 +9,7 @@
 > See also:
 >
 > - `architecture.md`
-> - `data-models.md`
+> - `models.md`
 > - `api.md`
 > - `development.md`
 > - `deployment.md`
@@ -74,7 +74,7 @@ Tasks:
 
 Reference:
 
-- data-models.md
+- models.md
 
 Tasks:
 
@@ -193,7 +193,7 @@ Tasks:
 Version 1 is complete when:
 
 - [ ] API matches `api.md`
-- [ ] Models match `data-models.md`
+- [ ] Models match `models.md`
 - [ ] CRUD is implemented
 - [ ] Validation is implemented
 - [ ] Seed is available
@@ -257,7 +257,7 @@ Tasks:
 
 Reference:
 
-- data-models.md
+- models.md
 - decisions.md
 
 Tasks:
@@ -450,7 +450,7 @@ Deployment
 Every completed version should update:
 
 - `architecture.md` (if required)
-- `data-models.md`
+- `models.md`
 - `api.md`
 - `development.md`
 - `deployment.md`

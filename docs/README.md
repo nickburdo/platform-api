@@ -59,8 +59,8 @@ The project documentation is organized by responsibility.
 | Document | Description |
 |----------|-------------|
 | `architecture.md` | System architecture and design principles |
-| `versions.md` | Project roadmap |
-| `data-models.md` | Business entities |
+| `roadmap.md` | Project roadmap |
+| `models.md` | Business entities |
 | `api.md` | REST API specification |
 | `development.md` | Development guide |
 | `deployment.md` | Deployment guide |
@@ -111,8 +111,8 @@ docs/
 
 ├── README.md
 ├── architecture.md
-├── versions.md
-├── data-models.md
+├── roadmap.md
+├── models.md
 ├── api.md
 ├── development.md
 ├── deployment.md
@@ -150,7 +150,7 @@ Version 3
 See:
 
 ```
-docs/versions.md
+docs/roadmap.md
 ```
 
 ---
