@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "test": "vitest run",
     "db:seed:job-tracker": "wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql",
     "db:seed:health-monitor": "wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql",
     "db:seed": "npm run db:seed:job-tracker && npm run db:seed:health-monitor"
@@ -28,6 +29,7 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1",
+    "vitest": "^4.1.9",
     "wrangler": "^4.106.0"
   }
 }

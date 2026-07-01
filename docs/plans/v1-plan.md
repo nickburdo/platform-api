@@ -61,6 +61,7 @@ Resolved during planning discussion (2026-07-01):
     - `models.md` and `api.md` need updating to reflect this (tracked in Documentation Updates)
 20. **Seed dates are relative to run time, not fixed** — `seed.sql` computes `measured_at`/`happened_at`/`applied_at`/`next_follow_up_at`/`created_at`/`updated_at` using SQLite's `strftime('%Y-%m-%dT%H:%M:%f', 'now', '±N days') || 'Z'` instead of hardcoded ISO strings baked in at authoring time. This matches the original Prisma seed scripts' behavior (they compute `daysAgo()`/`daysFromNow()` at run time) and keeps demo data looking current every time it's reseeded, rather than drifting further into the past as real time passes. Only `id` is fixed/hardcoded (Decision #13) — dates are intentionally not.
 21. **`date_from`/`date_to` query format and boundary** — accept **only** `YYYY-MM-DD` (matches every example in `api.md`; no full ISO-8601 datetime accepted in the query string, validated via a strict regex in Zod). `date_to` is inclusive of the entire day: the repository/service layer (Section 5) widens it to end-of-day (`< date_to + 1 day`, or equivalently `<= date_to 23:59:59.999`) before comparing against `measured_at`/`happened_at`, rather than treating it as an exact midnight instant. This widening happens outside Zod (which only validates the string format) — flagged here so Section 5 implements it consistently for all four Health Monitor resources and the dashboard.
+22. **Automated unit tests adopted, starting now** — supersedes `development.md`'s "Version 1 relies primarily on manual API testing." User decision: add `vitest`, starting with the Zod schemas already built in Section 4 (retroactively) and extending to Services/Repositories as they're built in Sections 5–6. Postman/manual testing (Section 9) remains in place *in addition to*, not instead of, automated tests — Section 9 and the Definition of Done are updated to require both. Test files are co-located next to their source (`*.schema.test.ts` beside `*.schema.ts`), not a parallel `tests/` tree — simplest option, standard Vitest convention. Repositories touch real D1 bindings directly; whether that needs `@cloudflare/vitest-pool-workers` or manual mocking is deferred until Section 5 is actually implemented, since no repository code exists yet to decide against.
 
 ---
 
@@ -316,7 +317,22 @@ For each of Glucose, Blood Pressure, Weight, Symptoms:
 
 # 9. Testing
 
-Reference: `development.md`
+Reference: `development.md`, Decision #22 (automated tests adopted)
+
+## 9.1 Automated Unit Tests (Vitest)
+
+- [x] Install and configure `vitest` (`vitest.config.ts`, `npm test` → `vitest run`)
+- [x] `src/schemas/common.schema.test.ts` — `idParamSchema`, `dateRangeQuerySchema` (format + range + boundary equality), `paginationQuerySchema` (defaults, coercion, bounds) — 12 tests
+- [x] `src/schemas/job-applications.schema.test.ts` — defaults, required fields, enum rejection, salary range, follow-up ordering, partial update, query schema — 14 tests
+- [x] `src/schemas/glucose.schema.test.ts` — exactly-one-of `fastingValue`/`afterMealValue` (both/neither/one/negative/zero), ignore-only update, update rejects setting both — 12 tests
+- [x] `src/schemas/blood-pressure.schema.test.ts` — systolic/diastolic ordering, pulse bounds, partial update skips the cross-field check unless both sides present — 8 tests
+- [x] `src/schemas/weight.schema.test.ts` — positive value enforcement on create and update — 6 tests
+- [x] `src/schemas/symptom.schema.test.ts` — intensity bounds (1–10 inclusive) — 7 tests
+- [x] `src/utils/validation.test.ts` — `zodErrorToResponse()` produces the documented `{ error: { message, details } }` shape, bucketed by field — 2 tests
+- [x] Full suite green: 61 tests across 7 files (`npm test`)
+- [ ] Extend to Repositories and Services as they're implemented in Sections 5–6 (Decision #22) — whether Repository tests need `@cloudflare/vitest-pool-workers` or manual D1 mocking is decided when Section 5 starts
+
+## 9.2 Manual Testing (Postman)
 
 - [ ] Build Postman/Bruno collection matching the structure in `development.md`:
   ```text
@@ -377,12 +393,16 @@ There is no separate "local" environment step anywhere in this flow — developm
 
 ---
 
-# Definition of Done (from `roadmap.md`, unchanged)
+# Definition of Done
+
+From `roadmap.md`, plus automated tests per Decision #22:
 
 - [ ] API matches `api.md`
 - [ ] Models match `models.md`
 - [ ] CRUD is implemented
 - [ ] Validation is implemented
+- [x] Automated unit tests pass (`npm test`) — currently covers all Zod schemas; extends to Repositories/Services as they're built
 - [ ] Seed is available
+- [ ] Manual Postman verification complete
 - [ ] Deployment works
 - [ ] Documentation is updated
