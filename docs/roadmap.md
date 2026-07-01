@@ -1,0 +1,459 @@
+# Versions
+
+> This document defines the implementation roadmap for the Platform API project.
+>
+> Each version represents a complete, deployable milestone.
+>
+> Every implementation task should follow the architecture, data models and API contract described in the accompanying documentation.
+>
+> See also:
+>
+> - `architecture.md`
+> - `data-models.md`
+> - `api.md`
+> - `development.md`
+> - `deployment.md`
+> - `decisions.md`
+
+---
+
+# Roadmap
+
+```text
+Version 1
+        │
+        ▼
+Version 2
+        │
+        ▼
+Version 3
+```
+
+Each version should remain deployable.
+
+---
+
+# Version 1
+
+## Goal
+
+Build the first production-ready REST API without authentication.
+
+The objective of Version 1 is to establish the complete backend foundation:
+
+- infrastructure;
+- data model;
+- REST API;
+- database;
+- validation;
+- seed data;
+- deployment.
+
+---
+
+## Infrastructure
+
+Reference:
+
+- architecture.md
+- development.md
+- deployment.md
+
+Tasks:
+
+- [ ] Create Cloudflare Worker
+- [ ] Configure Wrangler
+- [ ] Create D1 database
+- [ ] Configure Drizzle ORM
+- [ ] Configure Zod
+- [ ] Configure project structure
+
+---
+
+## Data Models
+
+Reference:
+
+- data-models.md
+
+Tasks:
+
+- [ ] Implement Job Tracker models
+- [ ] Implement Health Monitor models
+- [ ] Add `isDemo` support
+- [ ] Implement ignored records
+
+---
+
+## REST API
+
+Reference:
+
+- api.md
+
+### Job Tracker
+
+- [ ] GET /jobs
+- [ ] GET /jobs/:id
+- [ ] POST /jobs
+- [ ] PATCH /jobs/:id
+- [ ] DELETE /jobs/:id
+- [ ] GET /jobs/meta
+
+Features:
+
+- [ ] Pagination
+- [ ] Company filter
+- [ ] Status filter
+- [ ] Full-text search
+
+---
+
+### Health Monitor
+
+Implement resources:
+
+- [ ] Dashboard
+- [ ] Glucose
+- [ ] Blood Pressure
+- [ ] Weight
+- [ ] Symptoms
+
+Each resource should support:
+
+- [ ] GET
+- [ ] POST
+- [ ] PATCH
+
+Features:
+
+- [ ] Date filtering
+- [ ] Ignore / Restore
+
+---
+
+## Validation
+
+Reference:
+
+- development.md
+
+Tasks:
+
+- [ ] Create Zod schemas
+- [ ] Validate body
+- [ ] Validate query
+- [ ] Validate path parameters
+
+---
+
+## Seed
+
+Reference:
+
+- development.md
+
+Tasks:
+
+- [ ] Create Job Tracker demo data
+- [ ] Create Health Monitor demo data
+- [ ] Use `isDemo = true`
+
+---
+
+## Deployment
+
+Reference:
+
+- deployment.md
+
+Tasks:
+
+- [ ] Configure production deployment
+- [ ] Configure migrations
+- [ ] Configure seed
+- [ ] Verify deployment
+
+---
+
+## Testing
+
+Tasks:
+
+- [ ] Create Postman collection
+- [ ] Verify all endpoints
+- [ ] Verify pagination
+- [ ] Verify filtering
+- [ ] Verify demo data
+
+---
+
+## Definition of Done
+
+Version 1 is complete when:
+
+- [ ] API matches `api.md`
+- [ ] Models match `data-models.md`
+- [ ] CRUD is implemented
+- [ ] Validation is implemented
+- [ ] Seed is available
+- [ ] Deployment works
+- [ ] Documentation is updated
+
+---
+
+# Version 2
+
+## Goal
+
+Introduce authentication and authorization while preserving the REST API implemented in Version 1.
+
+The primary objective is to separate guest users from authenticated users and protect real user data.
+
+---
+
+## Authentication
+
+Reference:
+
+- architecture.md
+- api.md
+- decisions.md
+
+Tasks:
+
+- [ ] Create `User` model
+- [ ] Create users table
+- [ ] Hash passwords
+- [ ] Implement registration
+- [ ] Implement login
+- [ ] Generate JWT access tokens
+- [ ] Validate JWT
+- [ ] Implement logout (if required)
+
+---
+
+## Authorization
+
+Reference:
+
+- api.md
+
+Roles:
+
+- ADMIN
+- GUEST
+
+Tasks:
+
+- [ ] Implement role middleware
+- [ ] Restrict protected endpoints
+- [ ] Return `401 Unauthorized` for unauthenticated requests
+- [ ] Return `403 Forbidden` for insufficient permissions
+
+---
+
+## Demo Data
+
+Reference:
+
+- data-models.md
+- decisions.md
+
+Tasks:
+
+- [ ] Guest users can access only demo records
+- [ ] Guest users create only demo records
+- [ ] Admin users access real records
+- [ ] Server manages `isDemo`
+
+The client must never send:
+
+```text
+isDemo
+```
+
+---
+
+## User Management
+
+Tasks:
+
+- [ ] GET /auth/me
+- [ ] Register
+- [ ] Login
+
+Future endpoints such as password reset are intentionally postponed.
+
+---
+
+## Security
+
+Tasks:
+
+- [ ] Protect private endpoints
+- [ ] Validate JWT expiration
+- [ ] Secure password hashing
+- [ ] Secure secret storage
+
+---
+
+## Testing
+
+Tasks:
+
+- [ ] Register new user
+- [ ] Login
+- [ ] Verify JWT
+- [ ] Verify guest restrictions
+- [ ] Verify admin access
+- [ ] Verify unauthorized requests
+
+---
+
+## Definition of Done
+
+Version 2 is complete when:
+
+- [ ] Authentication works
+- [ ] Authorization works
+- [ ] Guest users access only demo data
+- [ ] Admin users access real data
+- [ ] JWT validation is implemented
+- [ ] Documentation is updated
+
+---
+
+# Version 3
+
+## Goal
+
+Improve developer experience and authentication options.
+
+---
+
+## Google Authentication
+
+Tasks:
+
+- [ ] Configure Google OAuth
+- [ ] Login with Google
+- [ ] Issue Platform API JWT after Google authentication
+
+Google authentication should become an additional login method.
+
+JWT remains the only authentication mechanism used by the API.
+
+---
+
+## OpenAPI
+
+Tasks:
+
+- [ ] Generate OpenAPI specification
+- [ ] Keep documentation synchronized
+- [ ] Validate specification
+
+---
+
+## Swagger UI
+
+Tasks:
+
+- [ ] Install Swagger UI
+- [ ] Publish API documentation
+- [ ] Group endpoints by resource
+
+---
+
+## Developer Experience
+
+Tasks:
+
+- [ ] Improve error messages
+- [ ] Improve validation errors
+- [ ] Improve API examples
+
+---
+
+## Monitoring
+
+Tasks:
+
+- [ ] Request logging
+- [ ] Error logging
+- [ ] Performance monitoring
+
+---
+
+## Definition of Done
+
+Version 3 is complete when:
+
+- [ ] Google Login works
+- [ ] Swagger UI is available
+- [ ] OpenAPI specification is generated
+- [ ] Documentation is synchronized
+- [ ] Production monitoring is configured
+
+---
+
+# Future Versions
+
+Possible future improvements include:
+
+- PostgreSQL
+- Redis cache
+- Cloudflare Queues
+- Cloudflare R2
+- Background jobs
+- Full-text search
+- Rate limiting
+- API versioning
+- Webhooks
+- Audit log
+
+These features should only be implemented when justified by real requirements.
+
+---
+
+# Versioning Policy
+
+Each version must satisfy the following requirements:
+
+- Deployable
+- Documented
+- Tested
+- Backward compatible where practical
+
+Implementation should always follow this workflow:
+
+```text
+Architecture
+        │
+        ▼
+Data Models
+        │
+        ▼
+API Contract
+        │
+        ▼
+Implementation
+        │
+        ▼
+Testing
+        │
+        ▼
+Deployment
+```
+
+Every completed version should update:
+
+- `architecture.md` (if required)
+- `data-models.md`
+- `api.md`
+- `development.md`
+- `deployment.md`
+- `decisions.md`
+
+before implementation is considered complete.
