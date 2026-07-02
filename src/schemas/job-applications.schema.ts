@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema';
-import { paginationQuerySchema } from './common.schema';
+import { atLeastOneFieldRule, paginationQuerySchema } from './common.schema';
 
 // No `.default()` here — defaults are applied only in createJobApplicationSchema
 // below. Zod's `.partial()` (used by updateJobApplicationSchema) strips the
@@ -49,18 +49,23 @@ const followUpRule = {
   },
 };
 
+// Body schemas are `.strict()` — unknown keys (server-managed fields, typos)
+// are a 400, not silently dropped (Decision #32). Query schemas stay lax.
 export const createJobApplicationSchema = z
   .object(jobApplicationShape)
   .extend({
     status: z.enum(JOB_APPLICATION_STATUSES).default('SAVED'),
     currency: z.string().min(1).default('USD'),
   })
+  .strict()
   .refine(salaryRangeRule.check, salaryRangeRule.options)
   .refine(followUpRule.check, followUpRule.options);
 
 export const updateJobApplicationSchema = z
   .object(jobApplicationShape)
   .partial()
+  .strict()
+  .refine(atLeastOneFieldRule.check, atLeastOneFieldRule.options)
   .refine(salaryRangeRule.check, salaryRangeRule.options)
   .refine(followUpRule.check, followUpRule.options);
 

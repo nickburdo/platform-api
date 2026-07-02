@@ -45,3 +45,13 @@ export const reasonRequiredWhenIgnoredRule = {
     path: ['reason'] as PropertyKey[],
   },
 };
+
+// Shared by every update (PATCH) schema: an empty body `{}` is a client
+// error, not a no-op that silently bumps `updatedAt` (Decision #33). No
+// `path` — this is an object-wide error, reported at the root.
+export const atLeastOneFieldRule = {
+  check: (data: Record<string, unknown>) => Object.keys(data).length > 0,
+  options: {
+    message: 'At least one field must be provided',
+  },
+};

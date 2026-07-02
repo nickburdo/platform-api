@@ -90,6 +90,26 @@ describe('createJobApplicationSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('rejects server-managed fields in the body (Decision #32)', () => {
+    expect(
+      createJobApplicationSchema.safeParse({
+        company: 'Acme',
+        position: 'Engineer',
+        isDemo: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects unknown keys such as field-name typos (Decision #32)', () => {
+    expect(
+      createJobApplicationSchema.safeParse({
+        company: 'Acme',
+        position: 'Engineer',
+        salaryMni: 100000,
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('updateJobApplicationSchema', () => {
@@ -97,8 +117,12 @@ describe('updateJobApplicationSchema', () => {
     expect(updateJobApplicationSchema.safeParse({ status: 'APPLIED' }).success).toBe(true);
   });
 
-  it('accepts an empty update', () => {
-    expect(updateJobApplicationSchema.safeParse({}).success).toBe(true);
+  it('rejects an empty update body (Decision #33)', () => {
+    expect(updateJobApplicationSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects server-managed fields on update (Decision #32)', () => {
+    expect(updateJobApplicationSchema.safeParse({ id: 'job_1', notes: 'hi' }).success).toBe(false);
   });
 
   it('still enforces salary ordering when both are provided', () => {

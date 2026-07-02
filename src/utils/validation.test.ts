@@ -22,4 +22,18 @@ describe('zodErrorToResponse', () => {
       expect(body.error.details).toHaveProperty('measuredAt');
     }
   });
+
+  it('surfaces root-level issues (unrecognized keys, object-wide refines) under _errors', () => {
+    const result = createGlucoseSchema.safeParse({
+      measuredAt: '2026-07-01T08:00:00.000Z',
+      fastingValue: 90,
+      isDemo: true,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const body = zodErrorToResponse(result.error);
+      expect(body.error.details).toHaveProperty('_errors');
+      expect(Array.isArray(body.error.details._errors)).toBe(true);
+    }
+  });
 });

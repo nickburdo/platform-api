@@ -89,6 +89,14 @@ Resolved during planning discussion (2026-07-01):
     - **Widened a flaky-prone test's timing margin** from 5ms to 50ms (`job-applications.service.test.ts`'s `updatedAt` test) — services have no injectable clock, so the test relies on real wall-clock time passing between two `new Date().toISOString()` calls; 5ms was too tight a margin against JS `Date` resolution and scheduler jitter.
     - **Fixed a `Column` type import** in `job-applications.repository.ts` (imported as a value, used only as a type) to match the `type Column` style already used in the sibling `repository-filters.ts` — cosmetic today (no `verbatimModuleSyntax`/lint rule catches it), but a latent inconsistency introduced in the same original diff.
     - Also removed a leftover untracked scratch file (`src/db/job-tracker/probe.repo.test.ts`) accidentally left behind by a prior review's live-verification step.
+29. **Sections 7 + 8 are planned and implemented as one block** (user decision, 2026-07-02) — Section 7.5's cross-cutting concerns (consistent envelope, 400/404/500 handling) are unimplementable without Section 8's error middleware, so both sections share this plan revision (Decisions #29–#36) and land together.
+30. **DB clients are injected by a global middleware into typed `c.var`** — `src/middleware/db.ts` instantiates both Drizzle clients once per request (`createJobTrackerDb(c.env.JOB_TRACKER_DB)`, `createHealthMonitorDb(c.env.HEALTH_MONITOR_DB)`) and stores them in Hono Variables (`c.var.jobTrackerDb`, `c.var.healthMonitorDb`). The combined `AppEnv = { Bindings; Variables }` type lives in `app.ts`. Route handlers never touch `c.env` directly — one place to evolve for V2 auth-scoped access.
+31. **Request validation via `@hono/zod-validator`** (new runtime dependency; installed version must support Zod 4 — peer `^3.25 || ^4`). One shared hook reuses the existing `zodErrorToResponse()` (Decision #7 shape), so every failed validation returns the documented 400 body; handlers read typed input via `c.req.valid('json' | 'query' | 'param')`. Two implementation notes surfaced while wiring this: (a) in Zod 4 the hook receives the core `$ZodError` (no `.flatten()` method), so `zodErrorToResponse()` now takes `$ZodError` and flattens via the top-level `z.flattenError()`; (b) root-level issues — `.strict()`'s unrecognized-keys error and object-wide refines like the empty-PATCH rule — have no field to attach to in Decision #7's field-error map, so they surface in `details` under `_errors` (the same root key Zod itself uses in its tree format).
+32. **Body schemas are `.strict()`** — all create/update (JSON body) schemas reject any unknown key with a 400, covering server-managed fields (`id`, `createdAt`, `updatedAt`, `isDemo`, plus `ignored`/`reason` on Health Monitor create) and field-name typos alike. Resolves Section 7.2's open "reject vs strip" question as **reject with 400**. Query schemas deliberately stay non-strict — unknown query params are ignored, per common URL semantics.
+33. **Empty `PATCH {}` returns 400** — all five update schemas get an "at least one field present" refine; a no-op patch that would only bump `updatedAt` is treated as a client error, not silently accepted.
+34. **Error handling uses Hono's `app.onError` + `app.notFound`**, not a hand-rolled try/catch middleware: `SyntaxError` from JSON body parsing → 400 `Invalid JSON body`; anything else → `console.error` with method/path/error and a generic 500 (`Internal server error`, no stack traces / SQL leaked); unknown routes → 404 in the same `{ error: { message } }` envelope. Implementation note: Hono's own json body parser (inside the validator) wraps a malformed body in an `HTTPException(400, 'Malformed JSON in request body')` rather than letting the `SyntaxError` propagate, so `onError` also re-shapes any `HTTPException` into the envelope with its own status/message (Hono's default would be a plain-text response) — live-verified via `wrangler dev --remote`.
+35. **Logging is a custom one-line middleware** (`src/middleware/logging.ts`): `method path status durationMs` — exactly the fields Section 8 lists. Not `hono/logger` (prints two lines per request in its own format).
+36. **Route tests via `app.request()` against real D1** in the Workers pool, co-located as `*.routes.test.ts`; the pattern is added to `vitest.workers.config.ts` and excluded from the unit config. Extends Decision #22's per-layer testing to the HTTP layer (statuses, envelope shape, strict-400s, 404s, ignore/restore round-trips).
 
 ---
 
@@ -304,47 +312,67 @@ Reference: `development.md`
 
 # 7. Routes (HTTP layer)
 
-Reference: `api.md` (exact contract), `development.md` (routes are thin — validate, call service, respond)
+Reference: `api.md` (exact contract), `development.md` (routes are thin — validate, call service, respond), Decisions #29–#36 (this revision, approved 2026-07-02)
+
+Structure: one sub-router per resource under `src/routes/` (`health.routes.ts`, `jobs.routes.ts`, `glucose.routes.ts`, `blood-pressure.routes.ts`, `weight.routes.ts`, `symptoms.routes.ts`, `dashboard.routes.ts`), each a `new Hono<AppEnv>()` mounted in `app.ts` via `app.route(...)`. Handlers take DB clients from `c.var` (Decision #30) and validated input from `c.req.valid(...)` (Decision #31). Success responses are written inline (`c.json({ data }, 200 | 201)` — no wrapper over a one-liner); the shared error body builder lives in `src/utils/responses.ts`.
+
+## 7.0 Preparation
+
+- [x] Install `@hono/zod-validator` (Zod 4-compatible version); `npm run typecheck` still passes
+- [x] Retro-tighten Section 4 schemas: `.strict()` on all 10 body schemas (create + update × 5 resources) per Decision #32, plus the "at least one field" refine on the 5 update schemas per Decision #33 — with unit tests for both behaviors added to the existing co-located `*.schema.test.ts` files (+14 unit tests; two pre-existing "accepts an empty update" tests inverted to match Decision #33)
+- [x] `src/utils/responses.ts` — `errorBody(message, details?)`, shared by `onError`/`notFound`/handler-level 404s
+- [x] Shared zValidator hook in `src/utils/validation.ts`, reusing `zodErrorToResponse()`
 
 ## 7.1 Health
 
-- [ ] `GET /health` → `{ data: { status: "ok" } }`, no auth, no DB access unless required, fast
+- [x] `GET /health` → `{ data: { status: "ok" } }` (`health.routes.ts`), no auth, no DB access; route test (app-level route tests live in `src/app.routes.test.ts`: health, unknown-path 404, malformed-JSON 400, CORS header, envelope shape)
 
-## 7.2 Job Tracker
+## 7.2 Job Tracker (`jobs.routes.ts`)
 
-- [ ] `GET /jobs` — query: `page`, `limit`, `status`, `company`, `search` → paginated list + `meta`; `search` matches `company`/`position`/`source`/`notes` via SQL `LIKE '%term%'`
-- [ ] `GET /jobs/:id` → single resource or `404`
-- [ ] `POST /jobs` → route generates `const id = crypto.randomUUID()`, passes `{ id, ...validatedBody }` to the service → `201` + created resource; rejects server-managed fields present in body (or silently strips them — decide: **reject with 400** is more explicit and safer)
-- [ ] `PATCH /jobs/:id` → partial update, all fields optional
-- [ ] `DELETE /jobs/:id` → physical delete, `{ data: { success: true } }`
-- [ ] `GET /jobs/meta` → `{ companies, statuses, stats }`
+- [x] `GET /jobs/meta` → `{ companies, statuses, stats }` — registered **before** `/:id` so `meta` never matches as an id
+- [x] `GET /jobs` — query: `page`, `limit`, `status`, `company`, `search` → paginated list + `meta`; `search` matches `company`/`position`/`source`/`notes` via SQL `LIKE '%term%'`
+- [x] `GET /jobs/:id` → single resource, or 404 envelope when the service returns `undefined`
+- [x] `POST /jobs` → route generates `const id = crypto.randomUUID()` (Decision #1), passes `{ id, ...validatedBody }` to the service → `201` + created resource; unknown/server-managed fields in the body → 400 (Decision #32)
+- [x] `PATCH /jobs/:id` → partial update; `{}` → 400 (Decision #33)
+- [x] `DELETE /jobs/:id` → physical delete, `200` + `{ data: { success: true } }` per `api.md` (not 204); 404 if missing
+- [x] Route tests (`jobs.routes.test.ts`): status codes, envelope shape, strict-400, 404, `meta`-vs-`:id` routing — 12 tests
 
 ## 7.3 Health Monitor
 
-For each of Glucose, Blood Pressure, Weight, Symptoms:
+Four explicit routers — deliberate near-copies (~40 lines each), **not** a generic router factory: Decision #28's lesson (a clever generic silently type-checking wrong) outweighs the duplication here.
 
-- [ ] `GET /<resource>` — query: `date_from`, `date_to`, no pagination
-- [ ] `POST /<resource>` — route generates `id` via `crypto.randomUUID()`, passes it to the service alongside the validated body
-- [ ] `PATCH /<resource>/:id` — update fields, or ignore/restore via `{ ignored, reason }`
+For each of `glucose.routes.ts`, `blood-pressure.routes.ts`, `weight.routes.ts`, `symptoms.routes.ts`:
+
+- [x] `GET /<resource>` — query: `date_from`, `date_to` (Decision #21), no pagination
+- [x] `POST /<resource>` — route generates `id` via `crypto.randomUUID()`, passes it to the service alongside the validated body → `201`
+- [x] `PATCH /<resource>/:id` — update fields, or ignore/restore via `{ ignored, reason }`; 404 for unknown id
+- [x] Route tests per resource, including the ignore/restore round-trip; glucose responses use `fastingValue`/`afterMealValue` (Decision #19 — `api.md` update stays tracked in Documentation Updates) — 7 + 5 + 5 + 5 = 22 tests
 
 ## 7.4 Dashboard
 
-- [ ] `GET /dashboard` — query: `date_from`, `date_to` → aggregated `DashboardData`
+- [x] `GET /dashboard` (`dashboard.routes.ts`) — query: `date_from`, `date_to` → aggregated `DashboardData`; route test — 2 tests
 
 ## 7.5 Cross-cutting route concerns
 
-- [ ] Consistent response envelope (`data` / `data + meta` / `error`) enforced via a shared response helper in `utils/`
-- [ ] 404 handling for unknown IDs across all resources
-- [ ] 400 handling for validation failures across all resources
-- [ ] 500 handler that never leaks internals (stack traces, SQL errors) in responses, but does log them
+- [x] Consistent response envelope (`data` / `data + meta` / `error`) — `errorBody()` helper + route-test assertions on every endpoint
+- [x] 404 handling for unknown IDs across all resources (handlers) and for unknown paths (`app.notFound`, Decision #34)
+- [x] 400 handling for validation failures across all resources via the shared zValidator hook (Decision #31)
+- [x] 500 handler that never leaks internals (stack traces, SQL errors) in responses, but does log them — `app.onError` (Decision #34, implemented in Section 8)
+- [x] Vitest wiring: `*.routes.test.ts` included in `vitest.workers.config.ts`, excluded from the unit config (Decision #36); shared `src/routes/test-helpers.ts` drives the fully-wired app via `app.request(path, init, env)`
+- [x] Full gate green: `npm run typecheck && npm run lint && npm test`
+- [x] Manual smoke via `wrangler dev --remote`: `/health` + one full CRUD round-trip (POST → GET → PATCH → DELETE → 404) against the real cloud `job-tracker-db`, verified 2026-07-02. Note: PowerShell's `Invoke-RestMethod` consistently got 503 "worker restarted mid-request" from the remote-preview proxy on non-GET requests — `curl.exe` works fine; use curl for manual smoke tests against `wrangler dev --remote`.
+- [x] Update this plan's checkboxes and test counts
 
 ---
 
 # 8. Middleware
 
-- [ ] Global error-handling middleware (catches thrown errors, maps to `{ error: { message, details } }`)
-- [ ] Logging middleware (method, path, status, duration — no sensitive data)
-- [ ] CORS middleware — `Access-Control-Allow-Origin: *`, no origin restriction (safe: auth uses `Authorization: Bearer`, not cookies)
+Reference: Decisions #30, #34, #35; CORS per Decision #8. Registration order in `app.ts`: CORS → logger → db-inject → routers; `onError`/`notFound` attached at app level.
+
+- [x] `src/middleware/db.ts` — per-request Drizzle clients into typed `c.var` (Decision #30)
+- [x] `src/middleware/error.ts` — `onError` handler (`HTTPException` → envelope with its status; `SyntaxError` → 400 `Invalid JSON body`; otherwise log + generic 500) and `notFound` handler (404 envelope) — Decision #34
+- [x] `src/middleware/logging.ts` — one line per request: `method path status durationMs`, no sensitive data (Decision #35)
+- [x] CORS middleware — `hono/cors` with defaults (`Access-Control-Allow-Origin: *`, Decision #8), registered directly in `app.ts`
 
 ---
 
@@ -365,7 +393,8 @@ Reference: `development.md`, Decision #22 (automated tests adopted)
 - [x] `src/utils/date-range.test.ts` — end-of-day widening — 5 tests
 - [x] Repository tests (`*.repo.test.ts`, Section 5, real D1 via `@cloudflare/vitest-pool-workers`) — 36 tests across 6 files, including the Decision #25 regressions (glucose partial-update invariant, LIKE-wildcard escaping)
 - [x] Service tests (`*.service.test.ts`, Section 6, real D1 via the same Workers pool) — 19 tests across 6 files
-- [x] Full suite green: 144 tests total (83 unit + 61 against real D1) across 21 files (`npm test`), after Decision #28's second-pass fixes
+- [x] Route tests (`*.routes.test.ts`, Section 7, real D1 via `app.request()` in the same Workers pool) — Decision #36 — 41 tests across 7 files (`app.routes.test.ts` + 6 under `src/routes/`)
+- [x] Full suite green: 199 tests total (97 unit + 102 against real D1) across 28 files (`npm test`), after Sections 7–8
 
 ## 9.2 Manual Testing (Postman)
 
@@ -434,8 +463,8 @@ From `roadmap.md`, plus automated tests per Decision #22:
 
 - [ ] API matches `api.md`
 - [ ] Models match `models.md`
-- [ ] CRUD is implemented
-- [ ] Validation is implemented
+- [x] CRUD is implemented
+- [x] Validation is implemented
 - [x] Automated unit tests pass (`npm test`) — currently covers all Zod schemas; extends to Repositories/Services as they're built
 - [ ] Seed is available
 - [ ] Manual Postman verification complete

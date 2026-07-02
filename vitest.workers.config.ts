@@ -17,7 +17,7 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ['src/**/*.repo.test.ts', 'src/**/*.service.test.ts'],
+    include: ['src/**/*.repo.test.ts', 'src/**/*.service.test.ts', 'src/**/*.routes.test.ts'],
     setupFiles: ['./src/db/test-setup.ts'],
   },
 });

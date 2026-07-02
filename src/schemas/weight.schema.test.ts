@@ -23,6 +23,13 @@ describe('createWeightSchema', () => {
   it('rejects a missing value', () => {
     expect(createWeightSchema.safeParse({ measuredAt: MEASURED_AT }).success).toBe(false);
   });
+
+  it('rejects server-managed fields in the body (Decision #32)', () => {
+    expect(
+      createWeightSchema.safeParse({ measuredAt: MEASURED_AT, value: 84.6, id: 'weight_1' })
+        .success,
+    ).toBe(false);
+  });
 });
 
 describe('updateWeightSchema', () => {
@@ -38,5 +45,13 @@ describe('updateWeightSchema', () => {
 
   it('rejects ignored: true without a reason', () => {
     expect(updateWeightSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
+
+  it('rejects an empty update body (Decision #33)', () => {
+    expect(updateWeightSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects unknown keys on update (Decision #32)', () => {
+    expect(updateWeightSchema.safeParse({ value: 84.6, isDemo: true }).success).toBe(false);
   });
 });

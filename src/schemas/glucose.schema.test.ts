@@ -45,6 +45,16 @@ describe('createGlucoseSchema', () => {
   it('rejects a missing measuredAt', () => {
     expect(createGlucoseSchema.safeParse({ fastingValue: 90 }).success).toBe(false);
   });
+
+  it('rejects server-managed fields in the body (Decision #32)', () => {
+    expect(
+      createGlucoseSchema.safeParse({
+        measuredAt: MEASURED_AT,
+        fastingValue: 90,
+        ignored: true,
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('updateGlucoseSchema', () => {
@@ -76,7 +86,11 @@ describe('updateGlucoseSchema', () => {
     );
   });
 
-  it('accepts a completely empty update', () => {
-    expect(updateGlucoseSchema.safeParse({}).success).toBe(true);
+  it('rejects a completely empty update (Decision #33)', () => {
+    expect(updateGlucoseSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects unknown keys on update (Decision #32)', () => {
+    expect(updateGlucoseSchema.safeParse({ fastingValue: 95, isDemo: true }).success).toBe(false);
   });
 });

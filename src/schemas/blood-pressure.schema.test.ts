@@ -95,4 +95,14 @@ describe('updateBloodPressureSchema', () => {
   it('rejects ignored: true without a reason', () => {
     expect(updateBloodPressureSchema.safeParse({ ignored: true }).success).toBe(false);
   });
+
+  it('rejects an empty update body (Decision #33)', () => {
+    expect(updateBloodPressureSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects unknown keys on update (Decision #32)', () => {
+    expect(updateBloodPressureSchema.safeParse({ pulse: 72, createdAt: MEASURED_AT }).success).toBe(
+      false,
+    );
+  });
 });

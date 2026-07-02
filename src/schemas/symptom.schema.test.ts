@@ -37,6 +37,17 @@ describe('createSymptomSchema', () => {
       false,
     );
   });
+
+  it('rejects server-managed fields in the body (Decision #32)', () => {
+    expect(
+      createSymptomSchema.safeParse({
+        happenedAt: HAPPENED_AT,
+        type: 'headache',
+        intensity: 5,
+        reason: 'x',
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('updateSymptomSchema', () => {
@@ -52,5 +63,15 @@ describe('updateSymptomSchema', () => {
 
   it('rejects ignored: true without a reason', () => {
     expect(updateSymptomSchema.safeParse({ ignored: true }).success).toBe(false);
+  });
+
+  it('rejects an empty update body (Decision #33)', () => {
+    expect(updateSymptomSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects unknown keys on update (Decision #32)', () => {
+    expect(updateSymptomSchema.safeParse({ intensity: 5, updatedAt: HAPPENED_AT }).success).toBe(
+      false,
+    );
   });
 });
