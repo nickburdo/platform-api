@@ -23,6 +23,15 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+// Standard SQL string-literal escaping (doubles embedded single quotes).
+// EMAIL_PATTERN already rejects quotes in practice, but every value
+// interpolated into the SQL string is escaped regardless — safety should be
+// structural, not incidental to how strictly upstream validation happens to
+// be written today.
+function sqlStringLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function runWrangler(args: string): string {
   return execSync(`npx wrangler ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
@@ -50,8 +59,8 @@ const existingId: string | undefined = (
 )[0]?.results[0]?.id;
 
 const sql = existingId
-  ? `UPDATE users SET email = '${email}', password_hash = '${passwordHash}', updated_at = '${now}' WHERE id = '${existingId}';`
-  : `INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES ('${crypto.randomUUID()}', '${email}', '${passwordHash}', 'ADMIN', '${now}', '${now}');`;
+  ? `UPDATE users SET email = ${sqlStringLiteral(email)}, password_hash = ${sqlStringLiteral(passwordHash)}, updated_at = ${sqlStringLiteral(now)} WHERE id = ${sqlStringLiteral(existingId)};`
+  : `INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (${sqlStringLiteral(crypto.randomUUID())}, ${sqlStringLiteral(email)}, ${sqlStringLiteral(passwordHash)}, 'ADMIN', ${sqlStringLiteral(now)}, ${sqlStringLiteral(now)});`;
 
 const tempDir = mkdtempSync(join(tmpdir(), 'create-admin-'));
 const tempFile = join(tempDir, 'admin.sql');
