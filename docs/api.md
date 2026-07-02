@@ -21,7 +21,7 @@ http://localhost:8787
 Production:
 
 ```http
-https://api.example.com
+https://platform-api.nick-burdo.workers.dev
 ```
 
 ---
@@ -82,6 +82,32 @@ All errors use the same structure.
   }
 }
 ```
+
+For validation errors (`400`), `details` is Zod's flattened field-error map: each key is a field name, each value an array of messages. Errors that belong to the request body as a whole — an unrecognized key, or an empty `PATCH` body — appear under the root key `_errors`:
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "salaryMin": ["salaryMin must be less than or equal to salaryMax"],
+      "_errors": ["Unrecognized key: \"isDemo\""]
+    }
+  }
+}
+```
+
+For non-validation errors (`404`, `500`, malformed JSON), `details` is omitted and only `message` is present.
+
+### Strict Request Bodies
+
+`POST` and `PATCH` bodies are validated strictly:
+
+* any unknown key — including server-managed fields and typos — is rejected with `400`;
+* an empty `PATCH` body (`{}`) is rejected with `400` ("At least one field must be provided");
+* a syntactically malformed JSON body is rejected with `400`.
+
+Unknown **query parameters**, by contrast, are ignored.
 
 ---
 
@@ -317,6 +343,10 @@ The client must not send:
 * `updatedAt`
 * `isDemo`
 
+Sending any of them is rejected with `400` (see Strict Request Bodies).
+
+When omitted, `status` defaults to `SAVED` and `currency` defaults to `"USD"`.
+
 ---
 
 ### Response
@@ -520,6 +550,10 @@ It can be restored by sending:
 }
 ```
 
+A non-empty `reason` is required whenever `ignored: true` is sent — `{ "ignored": true }` alone is a `400`.
+
+Health Monitor create bodies must not include `ignored`/`reason` (server-managed on create, rejected with `400`).
+
 ---
 
 # Glucose Resource
@@ -548,7 +582,8 @@ GET /glucose?date_from=2026-06-01&date_to=2026-06-30
       "createdAt": "2026-06-29T10:00:00.000Z",
       "updatedAt": "2026-06-29T10:00:00.000Z",
       "measuredAt": "2026-06-29T08:00:00.000Z",
-      "value": 5.4,
+      "fastingValue": 5.4,
+      "afterMealValue": null,
       "note": "Before breakfast",
       "ignored": false,
       "reason": "",
@@ -557,6 +592,8 @@ GET /glucose?date_from=2026-06-01&date_to=2026-06-30
   ]
 }
 ```
+
+Exactly one of `fastingValue` / `afterMealValue` is populated per record; the other is `null` (see `models.md`).
 
 ---
 
@@ -571,10 +608,12 @@ Creates a glucose measurement.
 ```json
 {
   "measuredAt": "2026-06-29T08:00:00.000Z",
-  "value": 5.4,
+  "fastingValue": 5.4,
   "note": "Before breakfast"
 }
 ```
+
+Exactly one of `fastingValue` / `afterMealValue` must be provided — both or neither is a `400`. The provided value must be greater than `0`.
 
 ---
 

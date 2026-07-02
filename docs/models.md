@@ -107,6 +107,8 @@ They can still appear in reports depending on client settings.
 
 Ignoring a record is performed via `PATCH`.
 
+Validation rule: when `ignored` is set to `true`, a non-empty `reason` is required. Restoring a record (`ignored: false`) conventionally sends `reason: ""`.
+
 ---
 
 ## GlucoseMeasurement
@@ -121,15 +123,21 @@ Represents a single blood glucose measurement.
 | createdAt | ISO string | ✓ | Record creation time |
 | updatedAt | ISO string | ✓ | Last update time |
 | measuredAt | ISO string | ✓ | Measurement time |
-| value | number | ✓ | Glucose value |
+| fastingValue | number \| null | | Fasting glucose value |
+| afterMealValue | number \| null | | After-meal glucose value |
 | note | string | | Optional note |
 | ignored | boolean | ✓ | Ignore flag |
 | reason | string | | Ignore reason |
 | isDemo | boolean | ✓ | Demo data flag |
 
+A measurement is taken either fasting or after a meal — never both at once, never neither.
+
 ### Validation Rules
 
-- value > 0
+- exactly one of `fastingValue` / `afterMealValue` is present (the other is `null`);
+- the present value is > 0.
+
+This also holds across partial updates: setting one value field clears the other.
 
 ---
 
@@ -233,6 +241,17 @@ type JobApplicationStatus =
 
 ---
 
+## RemoteType
+
+```ts
+type RemoteType =
+    | 'REMOTE'
+    | 'HYBRID'
+    | 'OFFICE';
+```
+
+---
+
 ## Status Lifecycle
 
 Typical application flow:
@@ -278,9 +297,9 @@ Represents a single job application.
 | source | string | | Source (LinkedIn, Djinni, etc.) |
 | salaryMin | number | | Minimum salary |
 | salaryMax | number | | Maximum salary |
-| currency | string | | Salary currency |
+| currency | string | | Salary currency, defaults to `"USD"` when omitted on create |
 | location | string | | Job location |
-| remoteType | string | | Remote / Hybrid / Office |
+| remoteType | RemoteType | | `REMOTE` \| `HYBRID` \| `OFFICE` |
 | notes | string | | User notes |
 | appliedAt | ISO string | | Application date |
 | nextFollowUpAt | ISO string | | Planned follow-up |

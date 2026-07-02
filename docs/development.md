@@ -41,7 +41,7 @@ Recommended tools:
 
 - VS Code or WebStorm
 - Git
-- Postman
+- JetBrains HTTP Client (`.http` files in `http/`) or curl
 
 ---
 
@@ -64,17 +64,21 @@ npm install
 
 # Running the API
 
-Start the local development server.
+Start the local development server:
 
 ```bash
-wrangler dev
+npm run dev
 ```
 
-The API will usually be available at:
+which runs `wrangler dev --remote`. The API will be available at:
 
 ```text
 http://localhost:8787
 ```
+
+**There is no local database.** The dev server runs against the same two cloud D1 databases as production (`--remote`), so every record you create locally lands in the real cloud data. All API-created data in V1 is demo data (`isDemo: true`) and can always be reset with `npm run db:seed`.
+
+Note for Windows/PowerShell users: test non-GET requests against the dev server with `curl.exe`, not `Invoke-RestMethod` — the remote-preview proxy consistently answers PowerShell's HTTP client with `503 "worker restarted mid-request"` on POST/PATCH/DELETE.
 
 ---
 
@@ -98,31 +102,37 @@ Authentication secrets become mandatory in Version 2.
 
 # Project Structure
 
-The project should be organized by responsibility.
+The project is organized by responsibility. Each of the two databases owns a self-contained folder — schema, client, seed, migrations and repositories live together:
 
 ```text
 src/
-
-├── app.ts
-├── index.ts
+├── app.ts                  Hono app: middleware order, routers, error handlers
+├── index.ts                Worker entrypoint
 │
 ├── db/
-│   ├── client.ts
-│   ├── schema.ts
-│   └── migrations/
+│   ├── job-tracker/
+│   │   ├── client.ts       Drizzle client for JOB_TRACKER_DB
+│   │   ├── schema.ts
+│   │   ├── seed.sql
+│   │   ├── migrations/
+│   │   └── *.repository.ts
+│   └── health-monitor/
+│       ├── client.ts       Drizzle client for HEALTH_MONITOR_DB
+│       ├── schema.ts
+│       ├── seed.sql
+│       ├── migrations/
+│       └── *.repository.ts
 │
-├── routes/
-│
-├── services/
-│
-├── repositories/
-│
-├── schemas/
-│
-├── middleware/
-│
-└── utils/
+├── routes/                 One sub-router per resource
+├── services/               Business logic
+├── schemas/                Zod validation schemas
+├── middleware/             db-inject, logging, error handling
+└── utils/                  Response/validation helpers
+
+http/                       JetBrains HTTP Client request files (manual testing)
 ```
+
+Repositories are deliberately colocated with the schema and client they use (`src/db/<domain>/`), not in a top-level `repositories/` folder.
 
 ---
 
@@ -278,10 +288,16 @@ Error:
 
 # Database
 
-The project uses:
+The project uses **two independent Cloudflare D1 databases**, accessed through Drizzle ORM:
 
-- Cloudflare D1
-- Drizzle ORM
+| Database | Binding | Tables |
+|----------|---------|--------|
+| `job-tracker-db` | `JOB_TRACKER_DB` | `job_applications` |
+| `health-monitor-db` | `HEALTH_MONITOR_DB` | `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries` |
+
+Each database has its own Drizzle config (`drizzle.job-tracker.config.ts`, `drizzle.health-monitor.config.ts`), schema file, client and migration history. The two domains never share a query.
+
+**All database work is cloud-only.** Every `wrangler d1` command uses `--remote`; there is no `--local` SQLite emulation anywhere in the workflow. (The only exception is the disposable Miniflare-backed D1 instances that `@cloudflare/vitest-pool-workers` spins up inside test runs — those never persist.)
 
 Database access should always go through Drizzle.
 
@@ -291,50 +307,51 @@ Raw SQL should only be used when Drizzle cannot express the required query.
 
 # Migrations
 
-Every database change must be implemented through migrations.
+Every database change must be implemented through migrations, generated and applied **per database**.
 
-Recommended workflow:
+Workflow:
 
-1. Update Drizzle schema.
-2. Generate migration.
-3. Review generated SQL.
-4. Apply migration locally.
-5. Test locally.
-6. Apply migration during deployment.
+1. Update the relevant Drizzle schema (`src/db/<domain>/schema.ts`).
+2. Generate the migration for that database.
+3. Review the generated SQL by hand.
+4. Apply it to the cloud database.
 
-Example commands:
+Commands:
 
 ```bash
-npm run db:generate
+# generate (one per database)
+npx drizzle-kit generate --config drizzle.job-tracker.config.ts
+npx drizzle-kit generate --config drizzle.health-monitor.config.ts
 
-npm run db:migrate:local
+# apply to the cloud database (no local target exists)
+npx wrangler d1 migrations apply job-tracker-db --remote
+npx wrangler d1 migrations apply health-monitor-db --remote
 ```
+
+`wrangler.jsonc` sets `migrations_dir` per D1 binding (`src/db/job-tracker/migrations`, `src/db/health-monitor/migrations`) so `wrangler d1 migrations apply` finds the right folder.
 
 ---
 
 # Seed Data
 
-Version 1 includes demo seed data.
+Version 1 includes demo seed data as **plain SQL fixture files**, one per database:
 
-Seed creates:
+- `src/db/job-tracker/seed.sql` — 17 job applications covering all 9 statuses;
+- `src/db/health-monitor/seed.sql` — 10 rows in each of the four measurement tables.
 
-- Job applications;
-- Glucose measurements;
-- Blood pressure measurements;
-- Weight measurements;
-- Symptom entries.
+Every seeded record sets `is_demo = 1`. Row IDs are fixed (stable across re-runs); dates are computed relative to the run time via SQLite date functions, so demo data always looks current.
 
-Every seeded record must contain:
+Seeding is **idempotent and safe to re-run**: each file first deletes only `is_demo = 1` rows, then re-inserts the fixtures — non-demo data is never touched. This also makes reseeding the standard way to clean up records created during manual testing.
 
-```ts
-isDemo: true
-```
-
-Recommended command:
+Commands:
 
 ```bash
-npm run db:seed
+npm run db:seed                    # both databases
+npm run db:seed:job-tracker
+npm run db:seed:health-monitor
 ```
+
+Seeding always runs against the cloud databases (`wrangler d1 execute <db> --remote --file=...`) and is always an explicit, manual command — it never runs automatically as part of deployment.
 
 ---
 
@@ -468,7 +485,7 @@ Every new endpoint should follow the same workflow.
 5. Implement repository.
 6. Implement service.
 7. Implement route.
-8. Test using Postman.
+8. Add automated tests per layer and requests to the `http/` collection.
 
 The implementation should always follow the documentation, not vice versa.
 
@@ -510,30 +527,32 @@ Documentation should always be updated before implementation.
 
 ---
 
-# Recommended Scripts
+# Scripts
 
-The following scripts are recommended.
+The actual scripts in `package.json`:
 
 ```json
 {
     "scripts": {
-        "dev": "wrangler dev",
-        "deploy": "wrangler deploy",
-
-        "db:generate": "drizzle-kit generate",
-        "db:migrate:local": "wrangler d1 migrations apply platform-api --local",
-        "db:migrate:remote": "wrangler d1 migrations apply platform-api --remote",
-
-        "db:seed": "tsx scripts/seed.ts",
+        "dev": "wrangler dev --remote",
+        "cf-typegen": "wrangler types",
 
         "typecheck": "tsc --noEmit",
         "lint": "eslint .",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+
+        "test": "npm run test:unit && npm run test:repo",
+        "test:unit": "vitest run",
+        "test:repo": "vitest run --config vitest.workers.config.ts",
+
+        "db:seed:job-tracker": "wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql",
+        "db:seed:health-monitor": "wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql",
+        "db:seed": "npm run db:seed:job-tracker && npm run db:seed:health-monitor"
     }
 }
 ```
 
-Script names may change during development.
+Migration generation/application runs via `npx drizzle-kit generate --config ...` and `npx wrangler d1 migrations apply <db> --remote` directly (see Migrations above); deployment via `npx wrangler deploy` (see `deployment.md`).
 
 ---
 
@@ -572,40 +591,41 @@ Typical usage:
 
 # Testing
 
-Version 1 relies primarily on manual API testing.
+Testing combines an automated Vitest suite (the primary safety net) with a manual `.http` request collection.
 
-Recommended tools:
+## Automated Tests (Vitest)
 
-- Postman
-- Bruno
-- curl
+The suite is split into two Vitest projects:
 
-Recommended collection structure:
+| Command | Config | What runs |
+|---------|--------|-----------|
+| `npm run test:unit` | `vitest.config.ts` | Plain-Node unit tests: Zod schemas, utils (`*.test.ts`) |
+| `npm run test:repo` | `vitest.workers.config.ts` | Tests inside a real `workerd` runtime against ephemeral Miniflare-backed D1: repositories (`*.repo.test.ts`), services (`*.service.test.ts`), HTTP routes via `app.request()` (`*.routes.test.ts`) |
+| `npm test` | both | The full suite |
+
+Test files are co-located next to their source. The Workers pool applies each database's migrations to its ephemeral test D1 before each test file; storage isolation is per test *file*, so shared `test-helpers.ts` modules clear the relevant tables before each test.
+
+Route tests drive the fully wired Hono app — middleware, validation, error handlers — over real D1 bindings, asserting status codes and response envelopes.
+
+## Manual Testing (JetBrains HTTP Client)
+
+Request files live in `http/`, one per resource, with a `client.test(...)` assertion block on every request and `id` chaining from POST responses into follow-up PATCH/DELETE requests:
 
 ```text
-Platform API
-
-├── Health
-│
-├── Job Tracker
-│   ├── List
-│   ├── Details
-│   ├── Create
-│   ├── Update
-│   ├── Delete
-│   └── Meta
-│
-├── Health Monitor
-│   ├── Glucose
-│   ├── Blood Pressure
-│   ├── Weight
-│   ├── Symptoms
-│   └── Dashboard
-│
-└── Authentication
+http/
+├── http-client.env.json    dev (localhost:8787) / prod environments
+├── health.http
+├── jobs.http               List, Details, Create, Update, Delete, Meta
+├── glucose.http
+├── blood-pressure.http
+├── weight.http
+├── symptoms.http
+└── dashboard.http
 ```
 
-Each endpoint should be tested for:
+Open a file in WebStorm, pick the environment (`dev` or `prod`) and run the requests top to bottom.
+
+Each endpoint is covered for:
 
 - successful request;
 - validation error;
@@ -613,6 +633,8 @@ Each endpoint should be tested for:
 - invalid identifier;
 - empty result;
 - demo data behavior.
+
+Health Monitor has no DELETE, so records created by manual runs stay in the cloud database — clean up with `npm run db:seed:health-monitor`.
 
 ---
 
@@ -711,34 +733,36 @@ Examples:
 
 Infrastructure
 
-- [ ] Create Cloudflare Worker
-- [ ] Configure Wrangler
-- [ ] Create D1 database
-- [ ] Configure Drizzle
+- [x] Create Cloudflare Worker
+- [x] Configure Wrangler
+- [x] Create both D1 databases
+- [x] Configure Drizzle (one config per database)
 
 Core
 
-- [ ] Health endpoint
-- [ ] Job Tracker CRUD
-- [ ] Health Monitor CRUD
-- [ ] Filtering
-- [ ] Pagination
-- [ ] Demo data support
-- [ ] Seed
+- [x] Health endpoint
+- [x] Job Tracker CRUD
+- [x] Health Monitor CRUD
+- [x] Filtering
+- [x] Pagination
+- [x] Demo data support
+- [x] Seed
 
 Validation
 
-- [ ] Zod schemas
-- [ ] Error handling
+- [x] Zod schemas
+- [x] Error handling
 
 Testing
 
-- [ ] Postman collection
-- [ ] Manual endpoint verification
+- [x] Automated Vitest suite (unit + repositories + services + routes)
+- [x] `.http` collection and manual endpoint verification
 
 Deployment
 
-- [ ] Deploy to Cloudflare
+- [x] Deploy to Cloudflare
+
+Detailed task-level history lives in `docs/plans/v1-plan.md`.
 
 ---
 

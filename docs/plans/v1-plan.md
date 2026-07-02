@@ -457,13 +457,19 @@ There is no separate "local" environment step anywhere in this flow — developm
 
 # Documentation Updates Required
 
-- [ ] `models.md` — change `JobApplication.remoteType` from a free string to the enum `REMOTE` | `HYBRID` | `OFFICE`; document `currency` default (`"USD"`)
-- [ ] `api.md` — reflect the same `remoteType`/`currency` changes in request/response examples
-- [ ] `models.md` — change `GlucoseMeasurement`: replace `value` with `fastingValue` (nullable) and `afterMealValue` (nullable); document the "exactly one of the two" validation rule (Decision #19)
-- [ ] `api.md` — update the Glucose resource's request/response examples to use `fastingValue`/`afterMealValue` instead of `value`
-- [ ] `architecture.md` — the "High Level Architecture" diagram and the Technology Stack table currently describe a single "Cloudflare D1 Database." Needs updating to show two separate D1 databases (`job-tracker-db`, `health-monitor-db`), one per bounded domain, with no cross-database access.
-- [ ] `development.md` — the "Database," "Migrations," "Seed Data," and "Recommended Scripts" sections currently describe one database (`platform-api`), a single `--local`/`--remote` migration pair, and a `scripts/seed.ts` + `tsx` seed approach. All of this needs rewriting to reflect: two databases, cloud-only workflow (`--remote` everywhere, no `--local`), and `seed.sql`-per-database instead of a TS seed script.
-- [ ] `deployment.md` — the "Database" and "Seed Data" sections need the same two-database, remote-only, `seed.sql`-based rewrite.
+Completed 2026-07-02. Scope was extended by user approval beyond the original 7 items (items 8–11 below); `docs/README.md` was also moved to the repo root (user decision — GitHub renders the root README as the repository landing page, and `docs/index.md` already serves as the docs TOC).
+
+- [x] `models.md` — change `JobApplication.remoteType` from a free string to the enum `REMOTE` | `HYBRID` | `OFFICE` (new `RemoteType` type); document `currency` default (`"USD"`)
+- [x] `api.md` — reflect the same `remoteType`/`currency` changes in request/response examples
+- [x] `models.md` — change `GlucoseMeasurement`: replace `value` with `fastingValue` (nullable) and `afterMealValue` (nullable); document the "exactly one of the two" validation rule (Decision #19), including its cross-update semantics; also documented the "reason required when ignored" rule (Decision #26) in the Ignore Mechanism section
+- [x] `api.md` — update the Glucose resource's request/response examples to use `fastingValue`/`afterMealValue` instead of `value`
+- [x] `architecture.md` — "High Level Architecture" diagram, Technology Stack table and the D1 component section now show two separate D1 databases (`job-tracker-db`, `health-monitor-db`), one per bounded domain, no cross-database access, cloud-only (no local DB)
+- [x] `development.md` — "Running the API" (`npm run dev` = `wrangler dev --remote`, no local DB, curl-vs-Invoke-RestMethod note), "Project Structure" (two db folders, colocated repositories per Decision #24, `http/`), "Database"/"Migrations"/"Seed Data" rewritten for two databases, cloud-only `--remote` workflow and `seed.sql`-per-database, "Scripts" now mirrors the real `package.json`
+- [x] `deployment.md` — "Database" and "Seed Data" rewritten the same way; `wrangler.jsonc` configuration made concrete (two bindings + `migrations_dir`); production URL recorded; Deployment Checklist checked off for V1 with secrets marked as Version 2
+- [x] *(extended scope)* `api.md` — error semantics from Decisions #31/#32/#33: strict bodies (unknown keys → 400), empty `PATCH` → 400, `details._errors` root key with example, malformed JSON → 400, reason-required-when-ignored; production Base URL
+- [x] *(extended scope)* `development.md` — Testing section rewritten: automated Vitest suite (unit / repo / service / route layers, two configs, per-file isolation) + JetBrains HTTP Client collection (Decision #38) replacing the Postman/Bruno text; V1 checklist checked off
+- [x] *(extended scope)* `README.md` — moved `docs/README.md` → repo root (`git mv`), updated: production URL, two-database stack row, Vitest row, real Quick Start (`npm run dev`/`npm test`), project structure with `src/`/`http/`/`docs/plans/`
+- [x] *(extended scope)* `docs/index.md` — unchanged (already accurate as the docs TOC)
 
 ---
 
@@ -471,12 +477,12 @@ There is no separate "local" environment step anywhere in this flow — developm
 
 From `roadmap.md`, plus automated tests per Decision #22:
 
-- [ ] API matches `api.md`
-- [ ] Models match `models.md`
+- [x] API matches `api.md`
+- [x] Models match `models.md`
 - [x] CRUD is implemented
 - [x] Validation is implemented
 - [x] Automated unit tests pass (`npm test`) — currently covers all Zod schemas; extends to Repositories/Services as they're built
 - [x] Seed is available
 - [x] Manual verification complete (JetBrains HTTP Client, Decision #38)
 - [x] Deployment works — https://platform-api.nick-burdo.workers.dev
-- [ ] Documentation is updated
+- [x] Documentation is updated

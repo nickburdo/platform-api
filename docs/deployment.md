@@ -24,16 +24,19 @@ Infrastructure:
 Internet
       │
       ▼
-Cloudflare Worker
+Cloudflare Worker (platform-api)
       │
       ▼
 Hono Application
       │
-      ▼
-Cloudflare D1
+      ├──────────────► Cloudflare D1: job-tracker-db
+      │
+      └──────────────► Cloudflare D1: health-monitor-db
 ```
 
 No dedicated server is required.
+
+Production URL: **https://platform-api.nick-burdo.workers.dev**
 
 ---
 
@@ -74,88 +77,65 @@ wrangler whoami
 
 # Project Configuration
 
-The project should contain:
+The project is configured via `wrangler.jsonc`, which defines:
 
-```text
-wrangler.toml
-```
-
-or
-
-```text
-wrangler.jsonc
-```
-
-depending on Wrangler version.
-
-The configuration should define:
-
-- Worker name
-- D1 database
+- Worker name (`platform-api`)
 - compatibility date
-- routes (if used)
+- **two** D1 bindings: `JOB_TRACKER_DB` → `job-tracker-db`, `HEALTH_MONITOR_DB` → `health-monitor-db`
+- `migrations_dir` per binding (`src/db/job-tracker/migrations`, `src/db/health-monitor/migrations`)
 
 ---
 
 # Database
 
-## Create D1 Database
+## Create the D1 Databases
 
-Example:
+Both databases are created once:
 
 ```bash
-wrangler d1 create platform-api
+npx wrangler d1 create job-tracker-db
+npx wrangler d1 create health-monitor-db
 ```
 
-Save the generated database ID.
-
-Update Wrangler configuration with the new ID.
+Save each generated database ID into the corresponding binding in `wrangler.jsonc`.
 
 ---
 
-## Generate Migration
+## Generate Migrations
+
+One Drizzle config per database:
 
 ```bash
-npm run db:generate
+npx drizzle-kit generate --config drizzle.job-tracker.config.ts
+npx drizzle-kit generate --config drizzle.health-monitor.config.ts
 ```
+
+Review the generated SQL by hand before applying.
 
 ---
 
-## Apply Migration (Local)
+## Apply Migrations
+
+All migrations run against the cloud databases — there is no local database in this project:
 
 ```bash
-npm run db:migrate:local
+npx wrangler d1 migrations apply job-tracker-db --remote
+npx wrangler d1 migrations apply health-monitor-db --remote
 ```
-
----
-
-## Apply Migration (Production)
-
-```bash
-npm run db:migrate:remote
-```
-
-Always verify migrations locally before applying them remotely.
 
 ---
 
 # Seed Data
 
-Version 1 requires demo data.
-
-Run:
+Version 1 requires demo data. Seed is plain SQL, one fixture file per database, executed against the cloud:
 
 ```bash
-npm run db:seed
+npm run db:seed                    # both databases
+npm run db:seed:job-tracker        # wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql
+npm run db:seed:health-monitor     # wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql
 ```
 
-Seed must create only demo records.
-
-```text
-isDemo = true
-```
-
-Seed should never overwrite production data.
+Seed creates only demo records (`is_demo = 1`) and is idempotent: each file deletes only `is_demo = 1` rows before re-inserting, so non-demo data is never touched. Seeding is always an explicit manual command — it never runs automatically as part of deployment.
 
 ---
 
@@ -284,27 +264,27 @@ Verify:
 
 Infrastructure
 
-- [ ] Wrangler configured
-- [ ] Worker created
-- [ ] D1 connected
+- [x] Wrangler configured
+- [x] Worker created
+- [x] Both D1 databases connected
 
 Database
 
-- [ ] Migration generated
-- [ ] Migration applied
-- [ ] Seed executed
+- [x] Migrations generated (per database)
+- [x] Migrations applied (`--remote`, per database)
+- [x] Seed executed (both databases)
 
-Secrets
+Secrets (Version 2 — none required in V1)
 
 - [ ] JWT secret
 - [ ] Google credentials
 
 Verification
 
-- [ ] Health endpoint
-- [ ] Job Tracker
-- [ ] Health Monitor
-- [ ] Authentication
+- [x] Health endpoint
+- [x] Job Tracker
+- [x] Health Monitor
+- [ ] Authentication (Version 2)
 
 ---
 

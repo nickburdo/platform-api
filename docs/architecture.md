@@ -96,7 +96,7 @@ New technologies are introduced only when they solve a real problem.
         | Vue                     |
         | React                   |
         | Mobile                  |
-        | Postman                 |
+        | HTTP Client / curl      |
         | CLI                     |
         +------------┬------------+
                      │
@@ -110,14 +110,23 @@ New technologies are introduced only when they solve a real problem.
          |                       |
          ▼                       ▼
  Request Validation      Business Logic
-      (Zod)
-         │
-         ▼
-      Drizzle ORM
-         │
-         ▼
-   Cloudflare D1 Database
+      (Zod)                (Services)
+                                │
+                                ▼
+                           Drizzle ORM
+                                │
+                 +--------------+--------------+
+                 |                             |
+                 ▼                             ▼
+      Cloudflare D1:                Cloudflare D1:
+      job-tracker-db                health-monitor-db
+      (job_applications)            (glucose_measurements,
+                                     blood_pressure_measurements,
+                                     weight_measurements,
+                                     symptom_entries)
 ```
+
+Each bounded domain owns its own database. The two databases never share a schema, a migration history or a query — there is no cross-database access anywhere in the application.
 
 ---
 
@@ -128,8 +137,8 @@ New technologies are introduced only when they solve a real problem.
 | TypeScript | Primary programming language |
 | Hono | HTTP routing |
 | Cloudflare Workers | Serverless runtime |
-| Cloudflare D1 | Database |
-| Drizzle ORM | Database access |
+| Cloudflare D1 | Two independent databases: `job-tracker-db`, `health-monitor-db` |
+| Drizzle ORM | Database access (one client, schema and migration history per database) |
 | Zod | Validation |
 | Wrangler | Development & deployment |
 
@@ -169,7 +178,16 @@ Responsible for:
 - indexes
 - SQL execution
 
-The application communicates with the database exclusively through Drizzle ORM.
+The project uses **two independent D1 databases**, one per bounded domain:
+
+- `job-tracker-db` — one table, `job_applications`;
+- `health-monitor-db` — four tables: `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries`.
+
+Each database has its own Drizzle schema, client and migrations directory under `src/db/<domain>/`. The two domains never reference each other's data.
+
+The application communicates with the databases exclusively through Drizzle ORM.
+
+There is no local database: development, testing against real infrastructure and production all target the same pair of cloud D1 instances (`--remote` everywhere).
 
 ---
 

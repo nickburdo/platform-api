@@ -23,8 +23,10 @@ Supported clients include:
 - React
 - Mobile
 - CLI
-- Postman
+- Any HTTP client (curl, JetBrains HTTP Client, Postman)
 - Third-party integrations
+
+Production: **https://platform-api.nick-burdo.workers.dev**
 
 ---
 
@@ -35,9 +37,10 @@ Supported clients include:
 | TypeScript | Programming language |
 | Hono | HTTP framework |
 | Cloudflare Workers | Runtime |
-| Cloudflare D1 | Database |
+| Cloudflare D1 | Two independent databases (`job-tracker-db`, `health-monitor-db`) |
 | Drizzle ORM | ORM |
 | Zod | Validation |
+| Vitest | Automated tests (incl. real-D1 runs via `@cloudflare/vitest-pool-workers`) |
 | Wrangler | Development & Deployment |
 
 ---
@@ -58,13 +61,15 @@ The project documentation is organized by responsibility.
 
 | Document | Description |
 |----------|-------------|
-| `architecture.md` | System architecture and design principles |
-| `roadmap.md` | Project roadmap |
-| `models.md` | Business entities |
-| `api.md` | REST API specification |
-| `development.md` | Development guide |
-| `deployment.md` | Deployment guide |
-| `decisions.md` | Architectural decisions (ADR) |
+| `docs/index.md` | Documentation table of contents |
+| `docs/architecture.md` | System architecture and design principles |
+| `docs/roadmap.md` | Project roadmap |
+| `docs/models.md` | Business entities |
+| `docs/api.md` | REST API specification |
+| `docs/development.md` | Development guide |
+| `docs/deployment.md` | Deployment guide |
+| `docs/decisions.md` | Architectural decisions (ADR) |
+| `docs/plans/` | Per-version implementation plans with decision logs |
 
 ---
 
@@ -107,16 +112,19 @@ Documentation is written before implementation.
 # Project Structure
 
 ```text
+README.md            this file
+src/                 application code (routes, services, schemas, middleware, db)
+http/                JetBrains HTTP Client request files (manual testing)
 docs/
-
-├── README.md
+├── index.md         documentation table of contents
 ├── architecture.md
 ├── roadmap.md
 ├── models.md
 ├── api.md
 ├── development.md
 ├── deployment.md
-└── decisions.md
+├── decisions.md
+└── plans/           one implementation plan per version, with decision log
 ```
 
 ---
@@ -199,16 +207,22 @@ Install dependencies.
 npm install
 ```
 
-Run development server.
+Run the development server (against the cloud D1 databases — the project has no local database).
 
 ```bash
-wrangler dev
+npm run dev
+```
+
+Run the test suite.
+
+```bash
+npm test
 ```
 
 Deploy.
 
 ```bash
-wrangler deploy
+npx wrangler deploy
 ```
 
 More information:
