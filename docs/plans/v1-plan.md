@@ -101,6 +101,7 @@ Resolved during planning discussion (2026-07-01):
     - `validationHook`'s parameter re-typed from the loose `{ success: boolean; error?: $ZodError }` to the discriminated union `{ success: true } | { success: false; error: $ZodError }`, mirroring Zod's `safeParse` contract. The loose type would have allowed a future refactor to skip the `error` check, return `undefined` on a failed validation, and fall through to zValidator's default response (raw Zod result instead of the documented envelope).
     - The per-file `DataEnvelope`/`ListEnvelope`/`ErrorEnvelope` test interfaces (duplicated across 6 route test files) consolidated into exports from `src/routes/test-helpers.ts`.
     - Verification also explicitly *rejected* five candidates as non-issues, recorded here so they aren't re-litigated: per-request Drizzle client construction on `/health` (negligible allocation, documented design per Decision #30); the `$ZodError<Record<string, unknown>>` cast in `zodErrorToResponse` (provably the minimal bridge — generic invariance leaves no cast-free alternative); the conditional `_errors` key (documented Decision #31 semantics); the repeated `errorBody('Resource not found')` literal across 7 handlers (stable string, structure already centralized in `errorBody()`, explicit-over-helper philosophy); `requestJson`'s `'POST' | 'PATCH'` method union (matches the V1 API surface exactly).
+38. **Section 9.2 uses JetBrains HTTP Client `.http` files, not Postman/Bruno** (user decision, 2026-07-02) — request files live in `http/` at the repo root (one file per resource: `health.http`, `jobs.http`, `glucose.http`, `blood-pressure.http`, `weight.http`, `symptoms.http`, `dashboard.http`), versioned with the code; `http-client.env.json` defines `dev` (`http://127.0.0.1:8787`) and `prod` (deployed Worker URL) environments; assertions via `client.test(...)` blocks, chaining ids from POST responses into follow-up requests. Rationale: zero extra tooling (built into WebStorm), same in-repo versioning benefit as Bruno; accepted limitation — JetBrains-specific format.
 
 ---
 
@@ -400,14 +401,17 @@ Reference: `development.md`, Decision #22 (automated tests adopted)
 - [x] Route tests (`*.routes.test.ts`, Section 7, real D1 via `app.request()` in the same Workers pool) — Decision #36 — 41 tests across 7 files (`app.routes.test.ts` + 6 under `src/routes/`)
 - [x] Full suite green: 199 tests total (97 unit + 102 against real D1) across 28 files (`npm test`), after Sections 7–8
 
-## 9.2 Manual Testing (Postman)
+## 9.2 Manual Testing (JetBrains HTTP Client)
 
-- [ ] Build Postman/Bruno collection matching the structure in `development.md`:
+Per Decision #38: `.http` files under `http/` (one per resource) + `http-client.env.json` with `dev`/`prod` environments — not a Postman/Bruno collection.
+
+- [ ] Build the `.http` request files matching the structure in `development.md`:
   ```text
-  Platform API
-  ├── Health
-  ├── Job Tracker (List, Details, Create, Update, Delete, Meta)
-  └── Health Monitor (Glucose, Blood Pressure, Weight, Symptoms, Dashboard)
+  http/
+  ├── health.http
+  ├── jobs.http          (List, Details, Create, Update, Delete, Meta)
+  ├── glucose.http, blood-pressure.http, weight.http, symptoms.http
+  └── dashboard.http
   ```
 - [ ] Per endpoint, verify:
   - [ ] successful request
@@ -429,21 +433,21 @@ No automated test suite is planned for V1 per `development.md` ("Version 1 relie
 
 Reference: `deployment.md`
 
-- [ ] `wrangler login` / `wrangler whoami` verified
-- [ ] Both D1 databases created in Cloudflare (`job-tracker-db`, `health-monitor-db`), both IDs wired into `wrangler.jsonc`
-- [ ] Migrations applied to the cloud database for both:
+- [x] `wrangler login` / `wrangler whoami` verified
+- [x] Both D1 databases created in Cloudflare (`job-tracker-db`, `health-monitor-db`), both IDs wired into `wrangler.jsonc` — done back in Section 1
+- [x] Migrations applied to the cloud database for both — done back in Section 2:
   ```bash
   wrangler d1 migrations apply job-tracker-db --remote
   wrangler d1 migrations apply health-monitor-db --remote
   ```
-- [ ] Seed executed against both cloud databases (demo data only):
+- [x] Seed executed against both cloud databases (demo data only) — done back in Section 3:
   ```bash
   wrangler d1 execute job-tracker-db --remote --file=./src/db/job-tracker/seed.sql
   wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql
   ```
-- [ ] `wrangler deploy`
-- [ ] Post-deploy verification of every endpoint listed in `deployment.md`'s checklist
-- [ ] Confirm `/health` responds `200`
+- [x] `wrangler deploy` — deployed 2026-07-02, live at **https://platform-api.nick-burdo.workers.dev** (version `004a376d-43f9-4ae1-b41a-3dcd6f84acc7`)
+- [x] Post-deploy verification of every endpoint listed in `deployment.md`'s checklist — all green against the production URL: `/health`; full Job Tracker CRUD round-trip (list showed the 16 seeded rows, POST → GET → PATCH → DELETE → 404) plus `/jobs/meta`; GET/POST/PATCH-ignore for all four Health Monitor resources; `/dashboard` with a date range; unknown path → 404 envelope; invalid body and server-managed field → 400. Health Monitor verification records cleaned up afterwards by re-running the idempotent `db:seed:health-monitor`.
+- [x] Confirm `/health` responds `200` — `{ "data": { "status": "ok" } }`
 
 There is no separate "local" environment step anywhere in this flow — development, seeding, and deployment all target the same pair of cloud D1 databases (Decision #12).
 
@@ -470,7 +474,7 @@ From `roadmap.md`, plus automated tests per Decision #22:
 - [x] CRUD is implemented
 - [x] Validation is implemented
 - [x] Automated unit tests pass (`npm test`) — currently covers all Zod schemas; extends to Repositories/Services as they're built
-- [ ] Seed is available
-- [ ] Manual Postman verification complete
-- [ ] Deployment works
+- [x] Seed is available
+- [ ] Manual verification complete (JetBrains HTTP Client, Decision #38)
+- [x] Deployment works — https://platform-api.nick-burdo.workers.dev
 - [ ] Documentation is updated
