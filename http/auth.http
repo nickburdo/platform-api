@@ -87,7 +87,10 @@ Authorization: Bearer {{token}}
 > {%
 client.test('200, matches the logged-in admin', function () {
   client.assert(response.status === 200, 'expected 200');
-  client.assert(response.body.data.email === '{{adminEmail}}', 'expected same email');
+  client.assert(
+    response.body.data.email === request.environment.get('adminEmail'),
+    'expected same email',
+  );
 });
 %}
 

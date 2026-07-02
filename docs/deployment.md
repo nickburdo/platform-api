@@ -153,21 +153,20 @@ Secrets must never be stored in Git.
 `JWT_SECRET` is required starting with Version 2 — set it without ever printing the value to a terminal that gets logged:
 
 ```powershell
-# generates a random value and pipes it directly into wrangler; nothing is echoed
+# Windows/PowerShell: generates a random value and pipes it directly into
+# wrangler; nothing is echoed
 $bytes = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); [Convert]::ToBase64String($bytes) | npx wrangler secret put JWT_SECRET
 ```
 
-or interactively:
+or interactively (any platform — prompts for the value, still nothing echoed to scrollback):
 
 ```bash
 wrangler secret put JWT_SECRET
 ```
 
-Future secrets:
+Future secrets (Version 3):
 
 ```text
-JWT_SECRET
-
 GOOGLE_CLIENT_ID
 
 GOOGLE_CLIENT_SECRET
@@ -289,6 +288,7 @@ Verify:
 Infrastructure
 
 - [x] Wrangler configured
+- [x] Worker created
 - [x] All three D1 databases connected
 
 Database

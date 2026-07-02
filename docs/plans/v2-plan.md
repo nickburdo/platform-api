@@ -160,7 +160,7 @@ Reference: `api.md` (updated in the docs-first commit)
 # 8. Security Checklist
 
 - [x] Password hashing: salted PBKDF2, sufficient iteration count (documented in code) — `src/utils/password.ts`, 100 000 iterations, 16-byte random salt, self-describing stored format (Decision #12)
-- [ ] `JWT_SECRET` stored via `wrangler secret`, never in Git; `.dev.vars` gitignored — `.dev.vars` gitignored since Section 2; production secret set in Section 10 (deployment)
+- [x] `JWT_SECRET` stored via `wrangler secret`, never in Git; `.dev.vars` gitignored — `.dev.vars` gitignored since Section 2; production secret set via `wrangler secret put` (Section 10 deployment, confirmed by `deployment.md`'s own checklist)
 - [x] Login failure responses are identical for "no such email" and "wrong password" (generic "Invalid credentials") — and now also identical in *cost* (Decision #13's timing-side-channel fix)
 - [x] JWT `exp` validated on every request that presents a token — `verifyToken()` delegates to `jose`'s `jwtVerify`, which rejects expired tokens; `resolveIdentity` maps that to `401`
 - [x] No plaintext password ever written to disk, logs, or the bootstrap script's temporary SQL file — only the PBKDF2 hash is ever interpolated into the transient SQL file (now via `sqlStringLiteral()`, Decision #13); the plaintext `ADMIN_PASSWORD` env var is read once and never echoed
