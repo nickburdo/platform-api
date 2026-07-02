@@ -8,3 +8,7 @@ await applyD1Migrations(
   env.HEALTH_MONITOR_DB,
   (env as unknown as { TEST_HEALTH_MONITOR_MIGRATIONS: never }).TEST_HEALTH_MONITOR_MIGRATIONS,
 );
+await applyD1Migrations(
+  env.AUTH_DB,
+  (env as unknown as { TEST_AUTH_MIGRATIONS: never }).TEST_AUTH_MIGRATIONS,
+);

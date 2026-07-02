@@ -1,0 +1,4 @@
+# Copy to .dev.vars (gitignored) and fill in real values.
+# Note: only these variables are local — `npm run dev` still targets the
+# real cloud D1 databases (wrangler dev --remote).
+JWT_SECRET=replace-with-a-long-random-string

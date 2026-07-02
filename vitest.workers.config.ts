@@ -3,6 +3,7 @@ import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-worker
 
 const jobTrackerMigrations = await readD1Migrations('./src/db/job-tracker/migrations');
 const healthMonitorMigrations = await readD1Migrations('./src/db/health-monitor/migrations');
+const authMigrations = await readD1Migrations('./src/db/auth/migrations');
 
 export default defineConfig({
   plugins: [
@@ -12,6 +13,9 @@ export default defineConfig({
         bindings: {
           TEST_JOB_TRACKER_MIGRATIONS: jobTrackerMigrations,
           TEST_HEALTH_MONITOR_MIGRATIONS: healthMonitorMigrations,
+          TEST_AUTH_MIGRATIONS: authMigrations,
+          // Fixed dummy secret for token tests — never used outside vitest.
+          JWT_SECRET: 'test-only-jwt-secret',
         },
       },
     }),

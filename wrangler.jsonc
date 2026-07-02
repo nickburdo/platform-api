@@ -19,5 +19,11 @@
       "database_id": "45d37615-ed40-4dab-a544-7c39440fb15a",
       "migrations_dir": "src/db/health-monitor/migrations",
     },
+    {
+      "binding": "AUTH_DB",
+      "database_name": "auth-db",
+      "database_id": "93f7916d-00b6-4e48-af2f-e9bf5bfe1cf6",
+      "migrations_dir": "src/db/auth/migrations",
+    },
   ],
 }

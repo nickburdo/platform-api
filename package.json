@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "wrangler dev --remote",
     "cf-typegen": "wrangler types",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "npm run test:unit && npm run test:repo",
@@ -22,12 +22,14 @@
     "@hono/zod-validator": "^0.8.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.27",
+    "jose": "^6.2.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.17.0",
     "@cloudflare/workers-types": "^4.20260701.1",
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",

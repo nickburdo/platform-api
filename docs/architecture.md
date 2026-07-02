@@ -106,6 +106,12 @@ New technologies are introduced only when they solve a real problem.
                      ▼
                Hono Router
                      │
+                     ▼
+        Identity Resolution (V2)
+        no token → guest (demo scope)
+        valid JWT → admin (real scope)
+        invalid JWT → 401
+                     │
          +-----------+-----------+
          |                       |
          ▼                       ▼
@@ -115,18 +121,18 @@ New technologies are introduced only when they solve a real problem.
                                 ▼
                            Drizzle ORM
                                 │
-                 +--------------+--------------+
-                 |                             |
-                 ▼                             ▼
-      Cloudflare D1:                Cloudflare D1:
-      job-tracker-db                health-monitor-db
-      (job_applications)            (glucose_measurements,
-                                     blood_pressure_measurements,
-                                     weight_measurements,
-                                     symptom_entries)
+             +------------------+------------------+
+             |                  |                  |
+             ▼                  ▼                  ▼
+  Cloudflare D1:      Cloudflare D1:      Cloudflare D1:
+  job-tracker-db      health-monitor-db   auth-db (V2)
+  (job_applications)  (glucose_…,         (users — the
+                       blood_pressure_…,   single admin row)
+                       weight_…,
+                       symptom_entries)
 ```
 
-Each bounded domain owns its own database. The two databases never share a schema, a migration history or a query — there is no cross-database access anywhere in the application.
+Each bounded domain owns its own database. The databases never share a schema, a migration history or a query — there is no cross-database access anywhere in the application.
 
 ---
 
@@ -178,10 +184,11 @@ Responsible for:
 - indexes
 - SQL execution
 
-The project uses **two independent D1 databases**, one per bounded domain:
+The project uses **three independent D1 databases**, one per bounded domain:
 
 - `job-tracker-db` — one table, `job_applications`;
-- `health-monitor-db` — four tables: `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries`.
+- `health-monitor-db` — four tables: `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries`;
+- `auth-db` (Version 2) — one table, `users`, holding the single admin row (ADR-012).
 
 Each database has its own Drizzle schema, client and migrations directory under `src/db/<domain>/`. The two domains never reference each other's data.
 

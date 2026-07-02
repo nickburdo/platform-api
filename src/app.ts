@@ -16,6 +16,8 @@ import { weightRoutes } from './routes/weight.routes';
 export type Bindings = {
   JOB_TRACKER_DB: D1Database;
   HEALTH_MONITOR_DB: D1Database;
+  AUTH_DB: D1Database;
+  JWT_SECRET: string;
 };
 
 export type Variables = {

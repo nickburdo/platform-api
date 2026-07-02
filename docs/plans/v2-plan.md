@@ -66,32 +66,34 @@ Resolved during planning discussion (2026-07-01):
 
 Reference: `models.md`
 
-- [ ] New database `auth-db`, schema `src/db/auth/schema.ts`, with a single table:
+- [x] New database `auth-db`, schema `src/db/auth/schema.ts`, with a single table:
   - `users`: `id` (UUID), `email` (unique), `password_hash`, `role` (kept as a column for schema durability / future multi-role support, but only ever set to `"ADMIN"` in V2), `created_at`, `updated_at`
+  - Created: `auth-db` = `93f7916d-00b6-4e48-af2f-e9bf5bfe1cf6` (region EEUR); binding `AUTH_DB` + `migrations_dir` in `wrangler.jsonc`; `src/db/auth/client.ts` per existing pattern; `cf-typegen` regenerated (`Env` now carries `AUTH_DB` + `JWT_SECRET`); `Bindings` type in `app.ts` extended
 - [x] `models.md` — update `User`/`UserRole` to reflect that `GUEST` is never a persisted value (done in the docs-first commit, see Documentation Updates)
-- [ ] Migration: generate via its own Drizzle config (`drizzle.auth.config.ts`), review, apply to the cloud database (`wrangler d1 migrations apply auth-db --remote`)
-- [ ] No schema changes needed in `job-tracker-db` or `health-monitor-db` — the existing `is_demo` flag from V1 is sufficient for the single-tenant ownership model
+- [x] Migration: generate via its own Drizzle config (`drizzle.auth.config.ts`), review, apply to the cloud database (`wrangler d1 migrations apply auth-db --remote`) — `0000_spotty_anthem.sql`, applied and verified via `PRAGMA table_info(users)`
+- [x] No schema changes needed in `job-tracker-db` or `health-monitor-db` — the existing `is_demo` flag from V1 is sufficient for the single-tenant ownership model
 
 ---
 
 # 2. Admin Bootstrap Script
 
-- [ ] `scripts/create-admin.ts` implementing Decision #8
-- [ ] Documented in `development.md` as a one-time (or credential-rotation) manual operation, run with:
+- [x] `scripts/create-admin.ts` implementing Decision #8 (SELECT-then-INSERT/UPDATE upsert; typechecked via its own `scripts/tsconfig.json` with Node types — the root tsconfig stays Workers-only, `npm run typecheck` runs both)
+- [x] Documented in `development.md` as a one-time (or credential-rotation) manual operation, run with:
   ```bash
   ADMIN_EMAIL=... ADMIN_PASSWORD=... npx tsx scripts/create-admin.ts
   ```
-- [ ] Script validates password strength before hashing (minimum length policy — recommend 12+ characters, since this is the single key to all real data)
-- [ ] Script never prints the password (hashed or plaintext) to stdout/logs
+- [x] Script validates password strength before hashing (minimum 12 characters)
+- [x] Script never prints the password (hashed or plaintext) to stdout/logs
+- [ ] Actually run against the cloud `auth-db` (deferred to pre-deployment verification, after routes exist to log in against)
 
 ---
 
 # 3. Password & Token Infrastructure
 
-- [ ] `utils/password.ts` — `hash(password)` / `verify(password, hash)` using Web Crypto PBKDF2, fixed iteration count and salt length documented as constants
-- [ ] `utils/jwt.ts` — `sign(payload)` / `verify(token)` using `jose`, `HS256` with `JWT_SECRET`
-- [ ] Store `JWT_SECRET` via `wrangler secret put JWT_SECRET` (per `deployment.md`) — never committed
-- [ ] Local dev: `JWT_SECRET` set via `.dev.vars` (gitignored) — but per V1 Decision #12, `wrangler dev --remote` still targets the real cloud databases, only the secret itself is local-only for convenience
+- [x] `utils/password.ts` — `hashPassword` / `verifyPassword` using Web Crypto PBKDF2 per Decisions #6/#12 (100k iterations, self-describing stored format, constant-time compare) — 5 unit tests
+- [x] `utils/jwt.ts` — `issueToken` / `verifyToken` using `jose`, `HS256`, 30-day expiry, claims `sub`/`role`/`iat`/`exp` — 5 unit tests
+- [ ] Store `JWT_SECRET` via `wrangler secret put JWT_SECRET` (per `deployment.md`) — never committed (deferred to deployment)
+- [x] Local dev: `JWT_SECRET` set via `.dev.vars` (gitignored, random value generated; `.dev.vars.example` committed; `.gitignore` gained `!.dev.vars.example`) — per V1 Decision #12, `wrangler dev --remote` still targets the real cloud databases, only the secret itself is local-only. Test runs get `TEST_AUTH_MIGRATIONS` + a dummy `JWT_SECRET` via miniflare bindings; note: the Workers pool also reports "Using secrets defined in .dev.vars" — verify which `JWT_SECRET` wins when the first test actually reads it (Section 9)
 
 ---
 
@@ -180,7 +182,7 @@ Per ADR-005 (docs before implementation), these should be updated before/alongsi
 - [x] `roadmap.md` — Version 2 section rewritten to the single-tenant, closed-registration, guest-as-no-token design, with a pointer to this plan and ADR-012
 - [x] `decisions.md` — ADR-012 "Single-Tenant Authentication: Closed Registration, Guest as Absence of Token" (context / decision / rationale / consequences)
 - [x] `development.md` — `scripts/create-admin.ts` bootstrap workflow, third `auth-db` row in the database table, `JWT_SECRET` per environment (`wrangler secret` / `.dev.vars` / test binding), demo-data rules updated
-- [ ] `architecture.md` — **flagged as a gap in this section's original list**: the High Level Architecture diagram and D1 component section must gain the third database and the identity-resolution step; to be updated alongside implementation (proposed addition, pending user confirmation)
+- [x] `architecture.md` — addition to this section's original list, approved 2026-07-02: High Level Architecture diagram gained the third database and the identity-resolution step; D1 component section now lists three databases
 
 ---
 

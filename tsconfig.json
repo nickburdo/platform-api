@@ -15,7 +15,6 @@
   },
   "include": [
     "src",
-    "scripts",
     "drizzle.*.config.ts",
     "vitest.config.ts",
     "vitest.workers.config.ts",
