@@ -25,52 +25,70 @@ const baseInput = {
 };
 
 describe('createJobApplication', () => {
-  it('sets isDemo: true and stamps createdAt/updatedAt', async () => {
-    const created = await createJobApplication(db, 'job-1', baseInput);
+  it('stamps createdAt/updatedAt and sets isDemo from the caller scope', async () => {
+    const created = await createJobApplication(db, 'job-1', baseInput, true);
     expect(created.isDemo).toBe(true);
     expect(created.createdAt).toBeTruthy();
     expect(created.updatedAt).toBe(created.createdAt);
+  });
+
+  it('creates a real record when isDemo is false (admin scope)', async () => {
+    const created = await createJobApplication(db, 'job-1b', baseInput, false);
+    expect(created.isDemo).toBe(false);
   });
 });
 
 describe('updateJobApplication', () => {
   it('bumps updatedAt without touching createdAt', async () => {
-    const created = await createJobApplication(db, 'job-2', baseInput);
+    const created = await createJobApplication(db, 'job-2', baseInput, true);
     // Services have no injectable clock (they call `new Date()` directly),
     // so this test relies on real wall-clock time passing between the two
     // ISO timestamps. 50ms gives a wide safety margin over the ~1ms
     // resolution of Date.toISOString() — a real D1 round-trip alone likely
     // exceeds this, but the margin is kept explicit rather than assumed.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const updated = await updateJobApplication(db, 'job-2', { notes: 'called back' });
+    const updated = await updateJobApplication(db, 'job-2', { notes: 'called back' }, true);
     expect(updated?.notes).toBe('called back');
     expect(updated?.createdAt).toBe(created.createdAt);
     expect(updated?.updatedAt).not.toBe(created.createdAt);
   });
 
   it('returns undefined for a missing id', async () => {
-    expect(await updateJobApplication(db, 'does-not-exist', { notes: 'x' })).toBeUndefined();
+    expect(
+      await updateJobApplication(db, 'does-not-exist', { notes: 'x' }, true),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createJobApplication(db, 'job-2b', baseInput, false);
+    expect(await updateJobApplication(db, 'job-2b', { notes: 'x' }, true)).toBeUndefined();
   });
 });
 
 describe('findJobApplicationById / deleteJobApplication', () => {
   it('finds and deletes a created record', async () => {
-    await createJobApplication(db, 'job-3', baseInput);
-    expect((await findJobApplicationById(db, 'job-3'))?.company).toBe('Acme');
-    expect(await deleteJobApplication(db, 'job-3')).toBe(true);
-    expect(await findJobApplicationById(db, 'job-3')).toBeUndefined();
+    await createJobApplication(db, 'job-3', baseInput, true);
+    expect((await findJobApplicationById(db, 'job-3', true))?.company).toBe('Acme');
+    expect(await deleteJobApplication(db, 'job-3', true)).toBe(true);
+    expect(await findJobApplicationById(db, 'job-3', true)).toBeUndefined();
+  });
+
+  it('does not find or delete a record outside the requested isDemo scope', async () => {
+    await createJobApplication(db, 'job-3b', baseInput, false);
+    expect(await findJobApplicationById(db, 'job-3b', true)).toBeUndefined();
+    expect(await deleteJobApplication(db, 'job-3b', true)).toBe(false);
   });
 });
 
 describe('listJobApplications', () => {
   it('returns pagination meta alongside rows', async () => {
     await Promise.all([
-      createJobApplication(db, 'l-1', baseInput),
-      createJobApplication(db, 'l-2', baseInput),
-      createJobApplication(db, 'l-3', baseInput),
+      createJobApplication(db, 'l-1', baseInput, true),
+      createJobApplication(db, 'l-2', baseInput, true),
+      createJobApplication(db, 'l-3', baseInput, true),
     ]);
 
-    const { rows, meta } = await listJobApplications(db, { page: 1, limit: 2 });
+    const { rows, meta } = await listJobApplications(db, { page: 1, limit: 2 }, true);
     expect(rows).toHaveLength(2);
     expect(meta).toEqual({ page: 1, limit: 2, total: 3, totalPages: 2 });
   });
@@ -79,13 +97,13 @@ describe('listJobApplications', () => {
 describe('getJobApplicationsMeta', () => {
   it('computes JobsStats rates from raw status counts', async () => {
     await Promise.all([
-      createJobApplication(db, 'm-1', { ...baseInput, status: 'SCREENING' }),
-      createJobApplication(db, 'm-2', { ...baseInput, status: 'TECHNICAL_INTERVIEW' }),
-      createJobApplication(db, 'm-3', { ...baseInput, status: 'OFFER' }),
-      createJobApplication(db, 'm-4', { ...baseInput, status: 'REJECTED' }),
+      createJobApplication(db, 'm-1', { ...baseInput, status: 'SCREENING' }, true),
+      createJobApplication(db, 'm-2', { ...baseInput, status: 'TECHNICAL_INTERVIEW' }, true),
+      createJobApplication(db, 'm-3', { ...baseInput, status: 'OFFER' }, true),
+      createJobApplication(db, 'm-4', { ...baseInput, status: 'REJECTED' }, true),
     ]);
 
-    const meta = await getJobApplicationsMeta(db);
+    const meta = await getJobApplicationsMeta(db, true);
     expect(meta.stats.total).toBe(4);
     expect(meta.stats.interviews).toBe(2);
     expect(meta.stats.interviewRate).toBe(0.5);
@@ -99,17 +117,15 @@ describe('getJobApplicationsMeta', () => {
   });
 
   it('returns zeroed rates instead of NaN when there are no records', async () => {
-    const meta = await getJobApplicationsMeta(db);
+    const meta = await getJobApplicationsMeta(db, true);
     expect(meta.stats.total).toBe(0);
     expect(meta.stats.interviewRate).toBe(0);
     expect(meta.stats.offerRate).toBe(0);
     expect(meta.stats.rejectionRate).toBe(0);
   });
 
-  it('scopes by isDemo when provided', async () => {
-    await createJobApplication(db, 'demo-1', { ...baseInput, company: 'DemoCo' });
-    // The service always sets isDemo: true on create in V1 (Decision #10) —
-    // insert a "real" row directly via the repository to exercise scoping.
+  it('scopes by isDemo', async () => {
+    await createJobApplication(db, 'demo-1', { ...baseInput, company: 'DemoCo' }, true);
     await createJobApplicationRow(db, {
       id: 'real-1',
       ...baseInput,
@@ -119,10 +135,10 @@ describe('getJobApplicationsMeta', () => {
       updatedAt: '2026-07-01T00:00:00.000Z',
     });
 
-    const demoMeta = await getJobApplicationsMeta(db, { isDemo: true });
+    const demoMeta = await getJobApplicationsMeta(db, true);
     expect(demoMeta.companies).toEqual(['DemoCo']);
 
-    const realMeta = await getJobApplicationsMeta(db, { isDemo: false });
+    const realMeta = await getJobApplicationsMeta(db, false);
     expect(realMeta.companies).toEqual(['RealCo']);
   });
 });

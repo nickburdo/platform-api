@@ -74,11 +74,17 @@ export async function listJobApplications(
   return { rows, total: totalRows[0]?.value ?? 0 };
 }
 
+// By-id operations are scoped to the caller's isDemo world (v2-plan.md
+// Decision #11): a record outside the scope behaves as nonexistent.
 export async function findJobApplicationById(
   db: JobTrackerDb,
   id: string,
+  isDemo: boolean,
 ): Promise<JobApplication | undefined> {
-  const [row] = await db.select().from(jobApplications).where(eq(jobApplications.id, id));
+  const [row] = await db
+    .select()
+    .from(jobApplications)
+    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)));
   return row;
 }
 
@@ -95,19 +101,24 @@ export async function updateJobApplication(
   db: JobTrackerDb,
   id: string,
   data: Partial<NewJobApplication>,
+  isDemo: boolean,
 ): Promise<JobApplication | undefined> {
   const [row] = await db
     .update(jobApplications)
     .set(data)
-    .where(eq(jobApplications.id, id))
+    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)))
     .returning();
   return row;
 }
 
-export async function deleteJobApplication(db: JobTrackerDb, id: string): Promise<boolean> {
+export async function deleteJobApplication(
+  db: JobTrackerDb,
+  id: string,
+  isDemo: boolean,
+): Promise<boolean> {
   const result = await db
     .delete(jobApplications)
-    .where(eq(jobApplications.id, id))
+    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)))
     .returning({ id: jobApplications.id });
   return result.length > 0;
 }

@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app';
+import { scopeIsDemo } from '../middleware/auth';
 import { dateRangeQuerySchema, idParamSchema } from '../schemas/common.schema';
 import { createWeightSchema, updateWeightSchema } from '../schemas/weight.schema';
 import {
@@ -16,14 +17,23 @@ import { validationHook } from '../utils/validation';
 export const weightRoutes = new Hono<AppEnv>();
 
 weightRoutes.get('/', zValidator('query', dateRangeQuerySchema, validationHook), async (c) => {
-  const rows = await listWeightMeasurements(c.var.healthMonitorDb, c.req.valid('query'));
+  const rows = await listWeightMeasurements(
+    c.var.healthMonitorDb,
+    c.req.valid('query'),
+    scopeIsDemo(c.var.identity),
+  );
   return c.json({ data: rows });
 });
 
 weightRoutes.post('/', zValidator('json', createWeightSchema, validationHook), async (c) => {
   // The route owns ID generation (Decision #1).
   const id = crypto.randomUUID();
-  const created = await createWeightMeasurement(c.var.healthMonitorDb, id, c.req.valid('json'));
+  const created = await createWeightMeasurement(
+    c.var.healthMonitorDb,
+    id,
+    c.req.valid('json'),
+    scopeIsDemo(c.var.identity),
+  );
   return c.json({ data: created }, 201);
 });
 
@@ -36,6 +46,7 @@ weightRoutes.patch(
       c.var.healthMonitorDb,
       c.req.valid('param').id,
       c.req.valid('json'),
+      scopeIsDemo(c.var.identity),
     );
     if (!updated) {
       return c.json(errorBody('Resource not found'), 404);

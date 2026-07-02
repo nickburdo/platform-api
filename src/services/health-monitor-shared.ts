@@ -2,12 +2,14 @@
 // weight, symptom) — deduplicates the "stamp server-managed fields on
 // create/update" logic that was previously copy-pasted across all four.
 
-export function withCreateStamps<T extends object>(id: string, input: T) {
+// `isDemo` comes from the caller's identity scope (V2, ADR-012): guests
+// create demo records, the admin creates real ones. Never client-supplied.
+export function withCreateStamps<T extends object>(id: string, input: T, isDemo: boolean) {
   const now = new Date().toISOString();
   return {
     id,
     ...input,
-    isDemo: true as const,
+    isDemo,
     ignored: false as const,
     reason: '',
     createdAt: now,

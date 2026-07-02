@@ -19,29 +19,33 @@ export async function createSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createSymptomSchema>,
+  isDemo: boolean,
 ): Promise<SymptomEntry> {
-  return createSymptomEntryRow(db, withCreateStamps(id, input));
+  return createSymptomEntryRow(db, withCreateStamps(id, input, isDemo));
 }
 
 export async function updateSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateSymptomSchema>,
+  isDemo: boolean,
 ): Promise<SymptomEntry | undefined> {
   assertReasonRequiredWhenIgnored(input);
-  return updateSymptomEntryRow(db, id, withUpdateStamp(input));
+  return updateSymptomEntryRow(db, id, withUpdateStamp(input), isDemo);
 }
 
 export async function listSymptomEntries(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
+  isDemo: boolean,
 ): Promise<SymptomEntry[]> {
-  return listSymptomEntriesRow(db, query);
+  return listSymptomEntriesRow(db, { ...query, isDemo });
 }
 
 export async function findSymptomEntryById(
   db: HealthMonitorDb,
   id: string,
+  isDemo: boolean,
 ): Promise<SymptomEntry | undefined> {
-  return findSymptomEntryByIdRow(db, id);
+  return findSymptomEntryByIdRow(db, id, isDemo);
 }

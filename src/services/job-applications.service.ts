@@ -27,14 +27,15 @@ export async function createJobApplication(
   db: JobTrackerDb,
   id: string,
   input: z.infer<typeof createJobApplicationSchema>,
+  isDemo: boolean,
 ): Promise<JobApplication> {
   const now = new Date().toISOString();
-  // Every V1 record is demo data — there's no auth yet to distinguish real
-  // users from guests (Decision #10).
+  // `isDemo` comes from the caller's identity scope (V2, ADR-012): guests
+  // create demo records, the admin creates real ones. Never client-supplied.
   return createJobApplicationRow(db, {
     id,
     ...input,
-    isDemo: true,
+    isDemo,
     createdAt: now,
     updatedAt: now,
   });
@@ -44,22 +45,33 @@ export async function updateJobApplication(
   db: JobTrackerDb,
   id: string,
   input: z.infer<typeof updateJobApplicationSchema>,
+  isDemo: boolean,
 ): Promise<JobApplication | undefined> {
-  return updateJobApplicationRow(db, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  return updateJobApplicationRow(
+    db,
+    id,
+    {
+      ...input,
+      updatedAt: new Date().toISOString(),
+    },
+    isDemo,
+  );
 }
 
 export async function findJobApplicationById(
   db: JobTrackerDb,
   id: string,
+  isDemo: boolean,
 ): Promise<JobApplication | undefined> {
-  return findJobApplicationByIdRow(db, id);
+  return findJobApplicationByIdRow(db, id, isDemo);
 }
 
-export async function deleteJobApplication(db: JobTrackerDb, id: string): Promise<boolean> {
-  return deleteJobApplicationRow(db, id);
+export async function deleteJobApplication(
+  db: JobTrackerDb,
+  id: string,
+  isDemo: boolean,
+): Promise<boolean> {
+  return deleteJobApplicationRow(db, id, isDemo);
 }
 
 export interface ListJobApplicationsResult {
@@ -75,8 +87,9 @@ export interface ListJobApplicationsResult {
 export async function listJobApplications(
   db: JobTrackerDb,
   query: z.infer<typeof listJobApplicationsQuerySchema>,
+  isDemo: boolean,
 ): Promise<ListJobApplicationsResult> {
-  const { rows, total } = await listJobApplicationsRows(db, query);
+  const { rows, total } = await listJobApplicationsRows(db, { ...query, isDemo });
   return {
     rows,
     meta: {
@@ -104,15 +117,11 @@ export interface JobApplicationsMeta {
   stats: JobsStats;
 }
 
-export interface GetJobApplicationsMetaParams {
-  isDemo?: boolean;
-}
-
 export async function getJobApplicationsMeta(
   db: JobTrackerDb,
-  params: GetJobApplicationsMetaParams = {},
+  isDemo: boolean,
 ): Promise<JobApplicationsMeta> {
-  const raw = await getJobApplicationsMetaRow(db, params);
+  const raw = await getJobApplicationsMetaRow(db, { isDemo });
 
   const interviews = INTERVIEW_STATUSES.reduce(
     (sum, status) => sum + (raw.statusCounts[status] ?? 0),

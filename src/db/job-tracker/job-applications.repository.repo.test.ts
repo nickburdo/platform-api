@@ -41,33 +41,54 @@ describe('createJobApplication / findJobApplicationById', () => {
     const created = await createJobApplication(db, makeRow({ id: 'job-1', company: 'Beacon' }));
     expect(created.company).toBe('Beacon');
 
-    const found = await findJobApplicationById(db, 'job-1');
+    const found = await findJobApplicationById(db, 'job-1', true);
     expect(found?.company).toBe('Beacon');
   });
 
   it('returns undefined for a missing id', async () => {
-    expect(await findJobApplicationById(db, 'does-not-exist')).toBeUndefined();
+    expect(await findJobApplicationById(db, 'does-not-exist', true)).toBeUndefined();
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createJobApplication(db, makeRow({ id: 'job-1b', isDemo: false }));
+    expect(await findJobApplicationById(db, 'job-1b', true)).toBeUndefined();
+    expect((await findJobApplicationById(db, 'job-1b', false))?.id).toBe('job-1b');
   });
 });
 
 describe('updateJobApplication', () => {
   it('updates fields and returns the updated row', async () => {
     await createJobApplication(db, makeRow({ id: 'job-2', status: 'SAVED' }));
-    const updated = await updateJobApplication(db, 'job-2', { status: 'APPLIED' });
+    const updated = await updateJobApplication(db, 'job-2', { status: 'APPLIED' }, true);
     expect(updated?.status).toBe('APPLIED');
   });
 
   it('returns undefined when updating a missing id', async () => {
-    expect(await updateJobApplication(db, 'does-not-exist', { status: 'APPLIED' })).toBeUndefined();
+    expect(
+      await updateJobApplication(db, 'does-not-exist', { status: 'APPLIED' }, true),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createJobApplication(db, makeRow({ id: 'job-2b', isDemo: false }));
+    expect(
+      await updateJobApplication(db, 'job-2b', { status: 'APPLIED' }, true),
+    ).toBeUndefined();
   });
 });
 
 describe('deleteJobApplication', () => {
   it('deletes an existing row and returns true, then false on a second delete', async () => {
     await createJobApplication(db, makeRow({ id: 'job-3' }));
-    expect(await deleteJobApplication(db, 'job-3')).toBe(true);
-    expect(await deleteJobApplication(db, 'job-3')).toBe(false);
-    expect(await findJobApplicationById(db, 'job-3')).toBeUndefined();
+    expect(await deleteJobApplication(db, 'job-3', true)).toBe(true);
+    expect(await deleteJobApplication(db, 'job-3', true)).toBe(false);
+    expect(await findJobApplicationById(db, 'job-3', true)).toBeUndefined();
+  });
+
+  it('does not delete a row outside the requested isDemo scope', async () => {
+    await createJobApplication(db, makeRow({ id: 'job-3b', isDemo: false }));
+    expect(await deleteJobApplication(db, 'job-3b', true)).toBe(false);
+    expect((await findJobApplicationById(db, 'job-3b', false))?.id).toBe('job-3b');
   });
 });
 

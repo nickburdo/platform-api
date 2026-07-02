@@ -41,20 +41,35 @@ describe('createBloodPressureMeasurement / findBloodPressureMeasurementById', ()
     );
     expect(created.systolic).toBe(130);
 
-    const found = await findBloodPressureMeasurementById(db, 'bp-1');
+    const found = await findBloodPressureMeasurementById(db, 'bp-1', true);
     expect(found?.systolic).toBe(130);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createBloodPressureMeasurement(db, makeRow({ id: 'bp-1b', isDemo: false }));
+    expect(await findBloodPressureMeasurementById(db, 'bp-1b', true)).toBeUndefined();
+    expect((await findBloodPressureMeasurementById(db, 'bp-1b', false))?.id).toBe('bp-1b');
   });
 });
 
 describe('updateBloodPressureMeasurement', () => {
   it('supports an ignore-only update', async () => {
     await createBloodPressureMeasurement(db, makeRow({ id: 'bp-2' }));
-    const updated = await updateBloodPressureMeasurement(db, 'bp-2', {
-      ignored: true,
-      reason: 'Wrong cuff position',
-    });
+    const updated = await updateBloodPressureMeasurement(
+      db,
+      'bp-2',
+      { ignored: true, reason: 'Wrong cuff position' },
+      true,
+    );
     expect(updated?.ignored).toBe(true);
     expect(updated?.systolic).toBe(120);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createBloodPressureMeasurement(db, makeRow({ id: 'bp-2b', isDemo: false }));
+    expect(
+      await updateBloodPressureMeasurement(db, 'bp-2b', { ignored: true, reason: 'x' }, true),
+    ).toBeUndefined();
   });
 });
 

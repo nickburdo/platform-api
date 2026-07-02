@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { freshAuthDb } from '../db/auth/test-helpers';
 import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import {
+  bearer,
   request,
   requestJson,
+  seedAdminAndGetToken,
   type DataEnvelope,
   type ErrorEnvelope,
   type ListEnvelope,
@@ -10,6 +13,7 @@ import {
 
 beforeEach(async () => {
   await freshJobTrackerDb();
+  await freshAuthDb();
 });
 
 async function createJob(overrides: Record<string, unknown> = {}): Promise<Response> {
@@ -125,5 +129,82 @@ describe('DELETE /jobs/:id', () => {
 
     const repeat = await request(`/jobs/${id}`, { method: 'DELETE' });
     expect(repeat.status).toBe(404);
+  });
+});
+
+describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
+  it('an admin token creates and reads real (isDemo: false) data', async () => {
+    const { token } = await seedAdminAndGetToken();
+    const created = await requestJson(
+      'POST',
+      '/jobs',
+      { company: 'Acme', position: 'Engineer' },
+      bearer(token),
+    );
+    expect(created.status).toBe(201);
+    const { data } = (await created.json()) as DataEnvelope;
+    expect(data.isDemo).toBe(false);
+
+    const list = await request('/jobs', { headers: bearer(token) });
+    const listBody = (await list.json()) as ListEnvelope;
+    expect(listBody.data).toHaveLength(1);
+    expect(listBody.data[0]?.isDemo).toBe(false);
+  });
+
+  it('guest and admin worlds never see each others records in list/meta', async () => {
+    await createJob({ company: 'GuestCo' }); // anonymous -> demo
+    const { token } = await seedAdminAndGetToken();
+    await requestJson('POST', '/jobs', { company: 'AdminCo', position: 'Engineer' }, bearer(token));
+
+    const guestList = (await (await request('/jobs')).json()) as ListEnvelope;
+    expect(guestList.data.map((r) => r.company)).toEqual(['GuestCo']);
+
+    const adminList = (await (await request('/jobs', { headers: bearer(token) })).json()) as ListEnvelope;
+    expect(adminList.data.map((r) => r.company)).toEqual(['AdminCo']);
+
+    const guestMeta = (await (await request('/jobs/meta')).json()) as {
+      data: { companies: string[] };
+    };
+    expect(guestMeta.data.companies).toEqual(['GuestCo']);
+
+    const adminMeta = (await (
+      await request('/jobs/meta', { headers: bearer(token) })
+    ).json()) as { data: { companies: string[] } };
+    expect(adminMeta.data.companies).toEqual(['AdminCo']);
+  });
+
+  it('a guest cannot read/patch/delete a real record by id (404, not 403)', async () => {
+    const { token } = await seedAdminAndGetToken();
+    const created = await requestJson(
+      'POST',
+      '/jobs',
+      { company: 'AdminCo', position: 'Engineer' },
+      bearer(token),
+    );
+    const id = ((await created.json()) as DataEnvelope).data.id as string;
+
+    expect((await request(`/jobs/${id}`)).status).toBe(404);
+    expect(
+      (await requestJson('PATCH', `/jobs/${id}`, { status: 'APPLIED' })).status,
+    ).toBe(404);
+    expect((await request(`/jobs/${id}`, { method: 'DELETE' })).status).toBe(404);
+  });
+
+  it('the admin cannot read/patch a demo record by id (404, not 403)', async () => {
+    const created = (await (await createJob()).json()) as DataEnvelope;
+    const id = created.data.id as string;
+    const { token } = await seedAdminAndGetToken();
+
+    expect((await request(`/jobs/${id}`, { headers: bearer(token) })).status).toBe(404);
+    expect(
+      (
+        await requestJson(
+          'PATCH',
+          `/jobs/${id}`,
+          { status: 'APPLIED' },
+          bearer(token),
+        )
+      ).status,
+    ).toBe(404);
   });
 });

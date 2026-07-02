@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { symptomEntries, type NewSymptomEntry, type SymptomEntry } from './schema';
@@ -20,11 +20,17 @@ export async function listSymptomEntries(
     .orderBy(asc(symptomEntries.happenedAt));
 }
 
+// By-id operations are scoped to the caller's isDemo world (v2-plan.md
+// Decision #11): a record outside the scope behaves as nonexistent.
 export async function findSymptomEntryById(
   db: HealthMonitorDb,
   id: string,
+  isDemo: boolean,
 ): Promise<SymptomEntry | undefined> {
-  const [row] = await db.select().from(symptomEntries).where(eq(symptomEntries.id, id));
+  const [row] = await db
+    .select()
+    .from(symptomEntries)
+    .where(and(eq(symptomEntries.id, id), eq(symptomEntries.isDemo, isDemo)));
   return row;
 }
 
@@ -41,11 +47,12 @@ export async function updateSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewSymptomEntry>,
+  isDemo: boolean,
 ): Promise<SymptomEntry | undefined> {
   const [row] = await db
     .update(symptomEntries)
     .set(data)
-    .where(eq(symptomEntries.id, id))
+    .where(and(eq(symptomEntries.id, id), eq(symptomEntries.isDemo, isDemo)))
     .returning();
   return row;
 }

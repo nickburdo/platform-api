@@ -19,14 +19,16 @@ export async function createGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createGlucoseSchema>,
+  isDemo: boolean,
 ): Promise<GlucoseMeasurement> {
-  return createGlucoseMeasurementRow(db, withCreateStamps(id, input));
+  return createGlucoseMeasurementRow(db, withCreateStamps(id, input, isDemo));
 }
 
 export async function updateGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateGlucoseSchema>,
+  isDemo: boolean,
 ): Promise<GlucoseMeasurement | undefined> {
   assertReasonRequiredWhenIgnored(input);
 
@@ -43,19 +45,21 @@ export async function updateGlucoseMeasurement(
     patch.fastingValue = null;
   }
 
-  return updateGlucoseMeasurementRow(db, id, withUpdateStamp(patch));
+  return updateGlucoseMeasurementRow(db, id, withUpdateStamp(patch), isDemo);
 }
 
 export async function listGlucoseMeasurements(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
+  isDemo: boolean,
 ): Promise<GlucoseMeasurement[]> {
-  return listGlucoseMeasurementsRow(db, query);
+  return listGlucoseMeasurementsRow(db, { ...query, isDemo });
 }
 
 export async function findGlucoseMeasurementById(
   db: HealthMonitorDb,
   id: string,
+  isDemo: boolean,
 ): Promise<GlucoseMeasurement | undefined> {
-  return findGlucoseMeasurementByIdRow(db, id);
+  return findGlucoseMeasurementByIdRow(db, id, isDemo);
 }

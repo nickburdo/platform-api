@@ -18,12 +18,13 @@ beforeEach(async () => {
 const happenedAt = '2026-06-15T08:00:00.000Z';
 
 describe('createSymptomEntry', () => {
-  it('sets isDemo: true, ignored: false, reason: "", and stamps timestamps', async () => {
-    const created = await createSymptomEntry(db, 's-1', {
-      happenedAt,
-      type: 'headache',
-      intensity: 3,
-    });
+  it('sets isDemo from the caller scope, ignored: false, reason: "", and stamps timestamps', async () => {
+    const created = await createSymptomEntry(
+      db,
+      's-1',
+      { happenedAt, type: 'headache', intensity: 3 },
+      true,
+    );
     expect(created.isDemo).toBe(true);
     expect(created.ignored).toBe(false);
     expect(created.reason).toBe('');
@@ -33,12 +34,21 @@ describe('createSymptomEntry', () => {
 
 describe('updateSymptomEntry', () => {
   it('returns undefined for a missing id', async () => {
-    expect(await updateSymptomEntry(db, 'nope', { ignored: true, reason: 'x' })).toBeUndefined();
+    expect(
+      await updateSymptomEntry(db, 'nope', { ignored: true, reason: 'x' }, true),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createSymptomEntry(db, 's-3b', { happenedAt, type: 'headache', intensity: 3 }, false);
+    expect(
+      await updateSymptomEntry(db, 's-3b', { ignored: true, reason: 'x' }, true),
+    ).toBeUndefined();
   });
 
   it('throws if called directly with ignored: true and no reason, bypassing Zod', async () => {
-    await createSymptomEntry(db, 's-3', { happenedAt, type: 'headache', intensity: 3 });
-    await expect(updateSymptomEntry(db, 's-3', { ignored: true })).rejects.toThrow(
+    await createSymptomEntry(db, 's-3', { happenedAt, type: 'headache', intensity: 3 }, true);
+    await expect(updateSymptomEntry(db, 's-3', { ignored: true }, true)).rejects.toThrow(
       'reason is required when ignored is true',
     );
   });
@@ -46,9 +56,9 @@ describe('updateSymptomEntry', () => {
 
 describe('listSymptomEntries / findSymptomEntryById', () => {
   it('lists and finds created records', async () => {
-    await createSymptomEntry(db, 's-2', { happenedAt, type: 'bloating', intensity: 2 });
-    const rows = await listSymptomEntries(db, {});
+    await createSymptomEntry(db, 's-2', { happenedAt, type: 'bloating', intensity: 2 }, true);
+    const rows = await listSymptomEntries(db, {}, true);
     expect(rows.map((r) => r.id)).toEqual(['s-2']);
-    expect((await findSymptomEntryById(db, 's-2'))?.type).toBe('bloating');
+    expect((await findSymptomEntryById(db, 's-2', true))?.type).toBe('bloating');
   });
 });

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import {
@@ -28,14 +28,17 @@ export async function listBloodPressureMeasurements(
     .orderBy(asc(bloodPressureMeasurements.measuredAt));
 }
 
+// By-id operations are scoped to the caller's isDemo world (v2-plan.md
+// Decision #11): a record outside the scope behaves as nonexistent.
 export async function findBloodPressureMeasurementById(
   db: HealthMonitorDb,
   id: string,
+  isDemo: boolean,
 ): Promise<BloodPressureMeasurement | undefined> {
   const [row] = await db
     .select()
     .from(bloodPressureMeasurements)
-    .where(eq(bloodPressureMeasurements.id, id));
+    .where(and(eq(bloodPressureMeasurements.id, id), eq(bloodPressureMeasurements.isDemo, isDemo)));
   return row;
 }
 
@@ -52,11 +55,12 @@ export async function updateBloodPressureMeasurement(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewBloodPressureMeasurement>,
+  isDemo: boolean,
 ): Promise<BloodPressureMeasurement | undefined> {
   const [row] = await db
     .update(bloodPressureMeasurements)
     .set(data)
-    .where(eq(bloodPressureMeasurements.id, id))
+    .where(and(eq(bloodPressureMeasurements.id, id), eq(bloodPressureMeasurements.isDemo, isDemo)))
     .returning();
   return row;
 }

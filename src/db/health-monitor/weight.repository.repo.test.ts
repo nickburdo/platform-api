@@ -34,20 +34,35 @@ describe('createWeightMeasurement / findWeightMeasurementById', () => {
     const created = await createWeightMeasurement(db, makeRow({ id: 'w-1', value: 85.2 }));
     expect(created.value).toBe(85.2);
 
-    const found = await findWeightMeasurementById(db, 'w-1');
+    const found = await findWeightMeasurementById(db, 'w-1', true);
     expect(found?.value).toBe(85.2);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createWeightMeasurement(db, makeRow({ id: 'w-1b', isDemo: false }));
+    expect(await findWeightMeasurementById(db, 'w-1b', true)).toBeUndefined();
+    expect((await findWeightMeasurementById(db, 'w-1b', false))?.id).toBe('w-1b');
   });
 });
 
 describe('updateWeightMeasurement', () => {
   it('supports an ignore-only update', async () => {
     await createWeightMeasurement(db, makeRow({ id: 'w-2' }));
-    const updated = await updateWeightMeasurement(db, 'w-2', {
-      ignored: true,
-      reason: 'Duplicate entry',
-    });
+    const updated = await updateWeightMeasurement(
+      db,
+      'w-2',
+      { ignored: true, reason: 'Duplicate entry' },
+      true,
+    );
     expect(updated?.ignored).toBe(true);
     expect(updated?.value).toBe(84.6);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createWeightMeasurement(db, makeRow({ id: 'w-2b', isDemo: false }));
+    expect(
+      await updateWeightMeasurement(db, 'w-2b', { ignored: true, reason: 'x' }, true),
+    ).toBeUndefined();
   });
 });
 

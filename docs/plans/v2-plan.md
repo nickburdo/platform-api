@@ -99,34 +99,37 @@ Reference: `models.md`
 
 # 4. Validation Schemas
 
-- [ ] `auth/login` body: `email`, `password` — the only auth input schema needed (no register schema in V2)
-- [ ] No client-supplied `role` anywhere — `role` is never accepted from a request body
+- [x] `auth/login` body: `email`, `password` — the only auth input schema needed (no register schema in V2) — `src/schemas/auth.schema.ts`, `.strict()` per V1 Decision #32; 5 unit tests
+- [x] No client-supplied `role` anywhere — `role` is never accepted from a request body (strict schema rejects it; verified by test)
 
 ---
 
 # 5. Repositories & Services
 
-- [ ] `users.repository.ts` (in `src/db/auth/`) — `findByEmail`, `findById`. No `create` exposed to the app runtime; creation only happens via the bootstrap script writing directly to `auth-db`.
-- [ ] `auth.service.ts`
-  - `login(email, password)` → verify password, issue JWT
-  - `me(userId)` → return current user (without `passwordHash`)
-- [ ] Update `job-applications.service.ts` and all Health Monitor services:
-  - Replace the V1 placeholder (`isDemo: true` always) with:
-    - No valid admin token → forced `isDemo: true` on create, filtered to `isDemo: true` on read (unchanged from V1 behavior)
-    - Valid admin token → forced `isDemo: false` on create, filtered to `isDemo: false` on read
-  - Continue rejecting any client-supplied `isDemo` in request bodies
-- [ ] Extend `findById`/`update`/`delete` in **all five** business repositories with the `isDemo` filter (Decision #11): out-of-scope ids behave as nonexistent → `404`. Existing repo/service/route tests updated for the new signatures.
+- [x] `users.repository.ts` (in `src/db/auth/`) — `findUserByEmail`, `findUserById`. No `create` exposed to the app runtime; creation only happens via the bootstrap script writing directly to `auth-db`. 4 repo tests.
+- [x] `auth.service.ts`
+  - `login(email, password)` → verify password, issue JWT (returns `null` for unknown email or wrong password alike — route maps both to the same 401)
+  - `getMe(userId)` → return current user (without `passwordHash`), always read fresh from `auth-db`
+  - `toPublicUser()` helper strips `passwordHash`
+  - 7 service tests
+- [x] Updated `job-applications.service.ts` and all four Health Monitor services:
+  - Replaced the V1 placeholder (`isDemo: true` always) with an `isDemo: boolean` parameter threaded from the route through the service into `withCreateStamps`/direct inserts:
+    - Guest scope (no valid admin token) → `isDemo: true` on create, filtered to `isDemo: true` on read (unchanged from V1 behavior)
+    - Admin scope (valid token) → `isDemo: false` on create, filtered to `isDemo: false` on read
+  - Continues rejecting any client-supplied `isDemo` in request bodies (unchanged — still `.strict()`)
+  - All existing service tests updated to pass `isDemo` explicitly; cross-scope regression tests added per function
+- [x] Extended `findById`/`update`/`delete` in **all five** business repositories with the `isDemo` filter (Decision #11): out-of-scope ids behave as nonexistent → `404`. Existing repo/service/route tests updated for the new signatures; a cross-scope regression test added to each repo/service test file.
 
 ---
 
 # 6. Middleware
 
-- [ ] `resolveIdentity` middleware (replaces the originally-planned `authenticate` + `authorize` pair):
-  - No `Authorization` header → `context.identity = { scope: 'guest' }`, request proceeds
-  - Header present, valid, unexpired → `context.identity = { scope: 'admin', userId }`, request proceeds
-  - Header present but invalid/malformed/expired → short-circuits with `401 Unauthorized` (Decision #9)
-- [ ] Applied globally to all Job Tracker and Health Monitor routes (they always run, they just branch on `context.identity.scope`)
-- [ ] `GET /auth/me` additionally requires `context.identity.scope === 'admin'` — returns `401` if not (this is the one endpoint that's genuinely "protected" rather than "scope-branching")
+- [x] `resolveIdentity` middleware (`src/middleware/auth.ts`, replaces the originally-planned `authenticate` + `authorize` pair):
+  - No `Authorization` header → `c.var.identity = { scope: 'guest' }`, request proceeds
+  - `Bearer` header, token valid and unexpired → `c.var.identity = { scope: 'admin', userId }`, request proceeds
+  - Header present but not a valid Bearer token (missing, malformed, bad signature, expired) → short-circuits with `401` (Decision #9)
+- [x] Applied globally (`app.use('*', resolveIdentity)`, after `dbClients`) — Job Tracker and Health Monitor routes always run, branching on `identity.scope` via the new `scopeIsDemo(identity)` helper (also exported from `src/middleware/auth.ts`)
+- [x] `GET /auth/me` additionally requires `identity.scope === 'admin'` — returns `401` otherwise; 2 unit tests for `scopeIsDemo`
 
 ---
 
@@ -134,17 +137,19 @@ Reference: `models.md`
 
 ## 7.1 Auth API
 
-Reference: `api.md` (needs updating — see Documentation Updates)
+Reference: `api.md` (updated in the docs-first commit)
 
-- [ ] `POST /auth/login` → `200` + `{ data: { user, token } }` on success, generic `401` ("Invalid credentials") on wrong email or wrong password alike (never reveal which one was wrong)
-- [ ] `GET /auth/me` → `200` + `{ data: { user } }` with a valid admin token, `401` otherwise
-- [ ] `POST /auth/register` — **not implemented in V2** (Decision #3); `api.md` should mark this endpoint as removed/deferred rather than leaving it documented as available
+- [x] `POST /auth/login` → `200` + `{ data: { token, user } }` on success, generic `401` ("Invalid credentials") on wrong email or wrong password alike (never reveal which one was wrong)
+- [x] `GET /auth/me` → `200` + `{ data: user }` with a valid admin token, `401` otherwise (missing token, invalid token, or token whose user row no longer exists)
+- [x] `POST /auth/register` — **not implemented in V2** (Decision #3); no route registered, falls through to the global `404` handler — verified by test
+- [x] `src/routes/auth.routes.test.ts` — 10 tests covering login (success, wrong password, unknown email, malformed body, unknown-key rejection) and me (valid/missing/invalid token) and the register-404 case
 
 ## 7.2 Existing V1 routes
 
-- [ ] No URL or payload contract changes
-- [ ] Behavior changes only in `isDemo` scoping, per Section 5
-- [ ] Add `401` (invalid/expired token case only, per Decision #9) to the documented possible responses for Job Tracker and Health Monitor endpoints in `api.md`
+- [x] No URL or payload contract changes
+- [x] Behavior changes only in `isDemo` scoping, per Section 5 — every route (`jobs`, `glucose`, `blood-pressure`, `weight`, `symptoms`, `dashboard`) now calls `scopeIsDemo(c.var.identity)` and threads it into its service call
+- [x] `api.md`'s `401` semantics were already documented in the docs-first commit (Section 10)
+- [x] Authorization matrix tests added: `app.routes.test.ts` (invalid/wrong-secret token → 401 on a business endpoint, guest-as-no-token unchanged), `jobs.routes.test.ts` (admin creates/reads real data, guest and admin worlds never overlap in list/meta, cross-scope by-id → 404 both directions), `glucose.routes.test.ts` (one Health Monitor resource exercising the same cross-scope-404 + real/demo split, representative of all four)
 
 ---
 
@@ -161,15 +166,17 @@ Reference: `api.md` (needs updating — see Documentation Updates)
 
 # 9. Testing
 
-- [ ] Bootstrap script creates the admin; re-running it rotates the password without creating a duplicate row
-- [ ] Login with correct credentials → token issued
-- [ ] Login with wrong email / wrong password → same generic `401` in both cases
-- [ ] `GET /auth/me` with valid / expired / missing / malformed token
-- [ ] No-token request to Job Tracker/Health Monitor → demo-scoped behavior (matches V1 exactly)
-- [ ] Valid admin token → real-data-scoped behavior (`isDemo: false` on create, filtered reads)
-- [ ] Expired/malformed token on Job Tracker/Health Monitor → `401`, not a silent guest fallback
-- [ ] Cross-scope by-id access (Decision #11): guest GET/PATCH/DELETE of a real record's id → `404`; admin GET/PATCH of a demo record's id → `404`
-- [ ] Full regression of the V1 manual collection (`http/`, JetBrains HTTP Client per v1-plan Decision #38 — supersedes this plan's original "Postman collection" wording) against the new identity-resolution layer, both with and without a token
+- [ ] Bootstrap script creates the admin; re-running it rotates the password without creating a duplicate row — deferred until pre-deployment (needs the real cloud `auth-db`, see Section 2)
+- [x] Login with correct credentials → token issued
+- [x] Login with wrong email / wrong password → same generic `401` in both cases
+- [x] `GET /auth/me` with valid / missing / malformed token (expired-token case covered at the `verifyToken` unit level in `src/utils/jwt.test.ts`, not re-tested at the route level — same code path)
+- [x] No-token request to Job Tracker/Health Monitor → demo-scoped behavior (matches V1 exactly — all pre-existing V1 route tests are anonymous requests and still pass unchanged)
+- [x] Valid admin token → real-data-scoped behavior (`isDemo: false` on create, filtered reads) — `jobs.routes.test.ts`, `glucose.routes.test.ts`
+- [x] Invalid/malformed/wrong-signature token on a business endpoint → `401`, not a silent guest fallback — `app.routes.test.ts`
+- [x] Cross-scope by-id access (Decision #11): guest GET/PATCH/DELETE of a real record's id → `404`; admin GET/PATCH of a demo record's id → `404`
+- [ ] Full regression of the V1 manual collection (`http/`, JetBrains HTTP Client per v1-plan Decision #38 — supersedes this plan's original "Postman collection" wording) against the new identity-resolution layer, both with and without a token — deferred to pre-deployment verification
+
+Implementation note: the Workers test pool logs "Using secrets defined in .dev.vars" for every test file, raising the question (flagged in Section 3) of whether `.dev.vars`'s `JWT_SECRET` or the miniflare `bindings.JWT_SECRET` ('test-only-jwt-secret') wins. Empirically moot: every test that issues a token (`seedAdminAndGetToken`) and every code path that verifies one (the `resolveIdentity` middleware) both read `env.JWT_SECRET`/`c.env.JWT_SECRET` — the same binding, whichever value it resolves to — so token issue/verify stays self-consistent regardless of precedence, and the full authorization matrix (149 real-D1 tests) passes.
 
 ---
 

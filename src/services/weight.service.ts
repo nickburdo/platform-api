@@ -19,29 +19,33 @@ export async function createWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createWeightSchema>,
+  isDemo: boolean,
 ): Promise<WeightMeasurement> {
-  return createWeightMeasurementRow(db, withCreateStamps(id, input));
+  return createWeightMeasurementRow(db, withCreateStamps(id, input, isDemo));
 }
 
 export async function updateWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateWeightSchema>,
+  isDemo: boolean,
 ): Promise<WeightMeasurement | undefined> {
   assertReasonRequiredWhenIgnored(input);
-  return updateWeightMeasurementRow(db, id, withUpdateStamp(input));
+  return updateWeightMeasurementRow(db, id, withUpdateStamp(input), isDemo);
 }
 
 export async function listWeightMeasurements(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
+  isDemo: boolean,
 ): Promise<WeightMeasurement[]> {
-  return listWeightMeasurementsRow(db, query);
+  return listWeightMeasurementsRow(db, { ...query, isDemo });
 }
 
 export async function findWeightMeasurementById(
   db: HealthMonitorDb,
   id: string,
+  isDemo: boolean,
 ): Promise<WeightMeasurement | undefined> {
-  return findWeightMeasurementByIdRow(db, id);
+  return findWeightMeasurementByIdRow(db, id, isDemo);
 }

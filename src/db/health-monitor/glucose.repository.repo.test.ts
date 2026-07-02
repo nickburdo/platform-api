@@ -34,18 +34,26 @@ describe('createGlucoseMeasurement / findGlucoseMeasurementById', () => {
     const created = await createGlucoseMeasurement(db, makeRow({ id: 'g-1', fastingValue: 91 }));
     expect(created.fastingValue).toBe(91);
 
-    const found = await findGlucoseMeasurementById(db, 'g-1');
+    const found = await findGlucoseMeasurementById(db, 'g-1', true);
     expect(found?.fastingValue).toBe(91);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createGlucoseMeasurement(db, makeRow({ id: 'g-1b', isDemo: false }));
+    expect(await findGlucoseMeasurementById(db, 'g-1b', true)).toBeUndefined();
+    expect((await findGlucoseMeasurementById(db, 'g-1b', false))?.id).toBe('g-1b');
   });
 });
 
 describe('updateGlucoseMeasurement', () => {
   it('sets ignored/reason without touching measurement fields', async () => {
     await createGlucoseMeasurement(db, makeRow({ id: 'g-2' }));
-    const updated = await updateGlucoseMeasurement(db, 'g-2', {
-      ignored: true,
-      reason: 'Incorrect reading',
-    });
+    const updated = await updateGlucoseMeasurement(
+      db,
+      'g-2',
+      { ignored: true, reason: 'Incorrect reading' },
+      true,
+    );
     expect(updated?.ignored).toBe(true);
     expect(updated?.reason).toBe('Incorrect reading');
     expect(updated?.fastingValue).toBe(90);
@@ -61,9 +69,14 @@ describe('updateGlucoseMeasurement', () => {
       db,
       makeRow({ id: 'g-3', fastingValue: null, afterMealValue: 130 }),
     );
-    const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 });
+    const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 }, true);
     expect(updated?.fastingValue).toBe(95);
     expect(updated?.afterMealValue).toBe(130);
+  });
+
+  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
+    await createGlucoseMeasurement(db, makeRow({ id: 'g-2b', isDemo: false }));
+    expect(await updateGlucoseMeasurement(db, 'g-2b', { fastingValue: 95 }, true)).toBeUndefined();
   });
 });
 

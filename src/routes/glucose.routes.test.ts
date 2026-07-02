@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { freshAuthDb } from '../db/auth/test-helpers';
 import { glucoseMeasurements } from '../db/health-monitor/schema';
 import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
-import { request, requestJson, type DataEnvelope } from './test-helpers';
+import {
+  bearer,
+  request,
+  requestJson,
+  seedAdminAndGetToken,
+  type DataEnvelope,
+} from './test-helpers';
 
 const MEASURED_AT = '2026-06-15T08:00:00.000Z';
 
 beforeEach(async () => {
   await freshHealthMonitorDb(glucoseMeasurements);
+  await freshAuthDb();
 });
 
 describe('POST /glucose', () => {
@@ -88,5 +96,32 @@ describe('PATCH /glucose/:id', () => {
     const res = await requestJson('PATCH', '/glucose/no-such-id', { fastingValue: 95 });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: { message: 'Resource not found' } });
+  });
+});
+
+describe('authorization matrix (v2-plan.md Decisions #4/#11)', () => {
+  it('an admin token creates real (isDemo: false) data, invisible to guest reads', async () => {
+    const { token } = await seedAdminAndGetToken();
+    const created = await requestJson(
+      'POST',
+      '/glucose',
+      { measuredAt: MEASURED_AT, fastingValue: 90 },
+      bearer(token),
+    );
+    expect(created.status).toBe(201);
+    const id = ((await created.json()) as DataEnvelope).data.id as string;
+
+    const guestList = (await (await request('/glucose')).json()) as { data: unknown[] };
+    expect(guestList.data).toHaveLength(0);
+
+    const adminList = (await (
+      await request('/glucose', { headers: bearer(token) })
+    ).json()) as { data: { id: string }[] };
+    expect(adminList.data.map((r) => r.id)).toEqual([id]);
+
+    // Guest cannot patch the admin's real record by id — 404, not 403.
+    expect(
+      (await requestJson('PATCH', `/glucose/${id}`, { fastingValue: 91 })).status,
+    ).toBe(404);
   });
 });

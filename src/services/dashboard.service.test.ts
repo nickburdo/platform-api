@@ -24,12 +24,14 @@ beforeEach(async () => {
 
 describe('getDashboardData', () => {
   it('delegates to the repository composition and returns all four resources', async () => {
-    await createGlucoseMeasurement(db, 'g-1', {
-      measuredAt: '2026-06-15T08:00:00.000Z',
-      fastingValue: 90,
-    });
+    await createGlucoseMeasurement(
+      db,
+      'g-1',
+      { measuredAt: '2026-06-15T08:00:00.000Z', fastingValue: 90 },
+      true,
+    );
 
-    const data = await getDashboardData(db, {});
+    const data = await getDashboardData(db, { isDemo: true });
     expect(data.glucoseMeasurements.map((r) => r.id)).toEqual(['g-1']);
     expect(data.bloodPressureMeasurements).toEqual([]);
     expect(data.weightMeasurements).toEqual([]);
@@ -37,10 +39,12 @@ describe('getDashboardData', () => {
   });
 
   it('scopes by isDemo when provided', async () => {
-    await createGlucoseMeasurement(db, 'g-demo', {
-      measuredAt: '2026-06-15T08:00:00.000Z',
-      fastingValue: 90,
-    });
+    await createGlucoseMeasurement(
+      db,
+      'g-demo',
+      { measuredAt: '2026-06-15T08:00:00.000Z', fastingValue: 90 },
+      true,
+    );
     await createGlucoseMeasurementRow(db, {
       id: 'g-real',
       measuredAt: '2026-06-15T08:00:00.000Z',
