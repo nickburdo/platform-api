@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { weightMeasurements } from '../db/health-monitor/schema';
 import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
-import { request, requestJson } from './test-helpers';
-
-interface DataEnvelope {
-  data: Record<string, unknown>;
-}
+import { request, requestJson, type DataEnvelope } from './test-helpers';
 
 const MEASURED_AT = '2026-06-15T08:00:00.000Z';
 

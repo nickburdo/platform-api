@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { request, requestJson } from './routes/test-helpers';
-
-interface ErrorEnvelope {
-  error: { message: string; details?: Record<string, unknown> };
-}
+import { request, requestJson, type ErrorEnvelope } from './routes/test-helpers';
 
 describe('GET /health', () => {
   it('responds with the ok envelope and touches no database', async () => {

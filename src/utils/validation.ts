@@ -32,12 +32,15 @@ export function zodErrorToResponse(error: $ZodError): ErrorResponseBody {
 
 // Shared @hono/zod-validator hook (Decision #31): every failed validation —
 // body, query, or path param — returns the documented 400 shape above
-// instead of zValidator's default response.
+// instead of zValidator's default response. The discriminated union mirrors
+// Zod's safeParse contract (`error` is guaranteed when `success` is false) —
+// a looser `error?:` type would let a refactor skip the error branch and fall
+// through to zValidator's default raw-Zod-result response.
 export function validationHook(
-  result: { success: boolean; error?: $ZodError },
+  result: { success: true } | { success: false; error: $ZodError },
   c: Context,
 ): Response | undefined {
-  if (!result.success && result.error) {
+  if (!result.success) {
     return c.json(zodErrorToResponse(result.error), 400);
   }
   return undefined;

@@ -1,19 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
-import { request, requestJson } from './test-helpers';
-
-interface DataEnvelope {
-  data: Record<string, unknown>;
-}
-
-interface ListEnvelope {
-  data: Record<string, unknown>[];
-  meta: Record<string, unknown>;
-}
-
-interface ErrorEnvelope {
-  error: { message: string; details?: Record<string, unknown> };
-}
+import {
+  request,
+  requestJson,
+  type DataEnvelope,
+  type ErrorEnvelope,
+  type ListEnvelope,
+} from './test-helpers';
 
 beforeEach(async () => {
   await freshJobTrackerDb();
