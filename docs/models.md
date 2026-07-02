@@ -59,8 +59,8 @@ Purpose:
 Rules:
 
 - the client never sends `isDemo`;
-- the server assigns its value;
-- guest users can only access demo records.
+- the server assigns its value from the caller's identity: no valid token (guest) → `true`, valid admin token → `false`;
+- the two worlds never overlap: guests read and write only demo records, the admin reads and writes only real records — including by-id operations, where a record outside the caller's scope behaves as nonexistent (`404`).
 
 ---
 
@@ -394,15 +394,17 @@ count / total
 
 Authentication is introduced in Version 2.
 
+The application is **single-tenant**: exactly one real user (the admin) exists. "Guest" is **not** a stored account or role — it is the absence of a valid `Authorization` token on a request. Guests are scoped to demo data; the admin is scoped to real data (see Demo Data above).
+
 ---
 
 ## UserRole
 
 ```ts
-type UserRole =
-    | 'ADMIN'
-    | 'GUEST';
+type UserRole = 'ADMIN';
 ```
+
+The `role` column exists for schema durability (future multi-role support), but only ever holds `'ADMIN'` in Version 2. `GUEST` is never persisted.
 
 ---
 
@@ -419,12 +421,19 @@ interface User {
 }
 ```
 
+Rules:
+
+- only one row ever exists (the single admin), created via an out-of-band bootstrap script — there is no public registration;
+- `email` is stored lowercase and unique;
+- `passwordHash` (salted PBKDF2, self-describing parameter format) is **never** serialized into any API response;
+- the `User` entity has no `isDemo` field — it lives in its own `auth-db` database, separate from both business domains.
+
 ---
 
 # Relationships
 
 ```text
-User (Version 2)
+User (Version 2, single admin — implicit ownership, no foreign keys)
         │
         ├───────────────┐
         │               │
@@ -438,6 +447,8 @@ JobApplication    Health Monitor
                       ▼
                  SymptomEntry
 ```
+
+Ownership is implicit: all `isDemo: false` records belong to the single admin. No `userId` column exists on any business entity — the `isDemo` flag is the only data partition, and the three databases (`auth-db`, `job-tracker-db`, `health-monitor-db`) never reference each other.
 
 ---
 

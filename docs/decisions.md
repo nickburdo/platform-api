@@ -522,6 +522,51 @@ Swagger stays synchronized with documentation.
 
 ---
 
+# ADR-012
+
+## Title
+
+Single-Tenant Authentication: Closed Registration, Guest as Absence of Token
+
+---
+
+### Status
+
+Accepted (2026-07-01, Version 2 planning; recorded 2026-07-02)
+
+---
+
+### Context
+
+Version 2 introduces authentication. The application serves exactly one real data owner (a personal platform), while anonymous visitors should keep exploring the demo world without registering (ADR-006). `roadmap.md`'s original wording implied open self-registration and a stored `GUEST` role.
+
+---
+
+### Decision
+
+- The application is **single-tenant**: exactly one user row ever exists — the admin, provisioned once via an out-of-band bootstrap script (`scripts/create-admin.ts`). There is no public `POST /auth/register`.
+- **Guest is the absence of a valid `Authorization` token**, not a stored account or role. Guests are scoped to demo data (`isDemo: true`) on every read and write; the admin is scoped to real data (`isDemo: false`). By-id access outside the caller's scope returns `404`.
+- A presented-but-invalid/expired token returns `401` on any endpoint — never a silent downgrade to guest.
+- Users live in a third D1 database (`auth-db`), keeping the one-database-per-domain rule; no business table gains a `userId` — `isDemo` remains the only data partition.
+
+---
+
+### Rationale
+
+- No open registration endpoint means no abuse surface and no user-management scope creep for a single-owner application.
+- Guest-as-no-token preserves V1's frictionless demo mode and full backward compatibility.
+- One role in practice ("authenticated = admin") removes the need for a role-authorization layer that would have no second consumer.
+
+---
+
+### Consequences
+
+- Multi-user support (roles, ownership columns, registration) becomes a deliberate future migration, not a latent half-built feature.
+- `roadmap.md`'s Version 2 section was rewritten to the as-designed scope; details live in `plans/v2-plan.md`.
+- The `role` column is kept on `users` for schema durability but only ever holds `'ADMIN'` in V2.
+
+---
+
 # Future Decisions
 
 Future ADRs may include:

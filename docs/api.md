@@ -160,23 +160,26 @@ Business entities contain `isDemo`.
 
 The client must not send this field.
 
-The server controls it automatically.
+The server derives it from the caller's identity (see Authentication):
 
-Rules:
-
-* guest users can access only demo data;
-* admin users can access real data;
+* requests without a token (guests) read and create only demo records (`isDemo: true`);
+* requests with a valid admin token read and create only real records (`isDemo: false`);
+* the two worlds never overlap — a record outside the caller's scope behaves as nonexistent: by-id operations return `404`;
 * seed data is created with `isDemo: true`.
 
 ---
 
 ## Authentication
 
-Authentication is planned for Version 2.
+Authentication is introduced in Version 2. The application is single-tenant: one admin account, no public registration.
 
-Until authentication is implemented, endpoints may be used without an access token.
+Identity resolution on every request:
 
-After Version 2, protected requests must use:
+* **no `Authorization` header** — the request proceeds as a **guest**, scoped to demo data. All V1 endpoints keep working without a token.
+* **`Authorization: Bearer <token>` with a valid, unexpired token** — the request proceeds as the **admin**, scoped to real data.
+* **header present but invalid, malformed or expired** — `401 Unauthorized` on any endpoint. A stale token is never silently downgraded to guest.
+
+Tokens are JWTs (HS256) issued by `POST /auth/login`, valid for 30 days. Payload: `sub` (user id), `role`, `iat`, `exp`. There is no refresh token and no server-side logout — the client discards the token.
 
 ```http
 Authorization: Bearer <access_token>
@@ -824,25 +827,95 @@ Returns aggregated Health Monitor data.
 
 # Authentication API
 
-Authentication is planned for Version 2.
+Introduced in Version 2. See the Authentication section above for identity-resolution rules.
 
 ---
 
 ## POST /auth/register
 
-Registers a new user.
+**Not implemented.** The application is single-tenant: the only account (the admin) is provisioned once via an out-of-band bootstrap script (`scripts/create-admin.ts`, see `development.md`), never through the public API. Self-service registration is intentionally deferred until a multi-user version is actually needed.
+
+Requests to this path return the standard `404` envelope.
 
 ---
 
 ## POST /auth/login
 
-Authenticates a user and returns an access token.
+Authenticates the admin and returns an access token.
+
+### Request Body
+
+```json
+{
+  "email": "admin@example.com",
+  "password": "correct horse battery staple"
+}
+```
+
+### Response
+
+```json
+{
+  "data": {
+    "token": "<jwt>",
+    "user": {
+      "id": "user_1",
+      "email": "admin@example.com",
+      "role": "ADMIN",
+      "createdAt": "2026-07-02T10:00:00.000Z",
+      "updatedAt": "2026-07-02T10:00:00.000Z"
+    }
+  }
+}
+```
+
+`passwordHash` is never included.
+
+### Errors
+
+Wrong email and wrong password are indistinguishable — both return:
+
+```http
+401 Unauthorized
+```
+
+```json
+{
+  "error": {
+    "message": "Invalid credentials"
+  }
+}
+```
+
+A structurally invalid body (missing/malformed fields, unknown keys) returns `400` with the standard validation envelope.
 
 ---
 
 ## GET /auth/me
 
-Returns the current authenticated user.
+Returns the current authenticated user. Requires a valid admin token.
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "user_1",
+    "email": "admin@example.com",
+    "role": "ADMIN",
+    "createdAt": "2026-07-02T10:00:00.000Z",
+    "updatedAt": "2026-07-02T10:00:00.000Z"
+  }
+}
+```
+
+### Errors
+
+Missing, invalid or expired token:
+
+```http
+401 Unauthorized
+```
 
 ---
 

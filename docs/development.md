@@ -86,17 +86,17 @@ Note for Windows/PowerShell users: test non-GET requests against the dev server 
 
 Secrets must never be committed to Git.
 
-Future environment variables include:
+From Version 2 the Worker requires:
 
 ```text
 JWT_SECRET
-
-GOOGLE_CLIENT_ID
-
-GOOGLE_CLIENT_SECRET
 ```
 
-Authentication secrets become mandatory in Version 2.
+- **Production:** `wrangler secret put JWT_SECRET`
+- **Local dev:** `.dev.vars` (gitignored); copy the committed `.dev.vars.example` and fill in a value. Note: only the secret is local — `wrangler dev --remote` still targets the real cloud databases.
+- **Tests:** a fixed dummy value is bound via `vitest.workers.config.ts`.
+
+Version 3 will additionally require `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 
 ---
 
@@ -294,8 +294,9 @@ The project uses **two independent Cloudflare D1 databases**, accessed through D
 |----------|---------|--------|
 | `job-tracker-db` | `JOB_TRACKER_DB` | `job_applications` |
 | `health-monitor-db` | `HEALTH_MONITOR_DB` | `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries` |
+| `auth-db` (Version 2) | `AUTH_DB` | `users` (a single admin row — see ADR-012) |
 
-Each database has its own Drizzle config (`drizzle.job-tracker.config.ts`, `drizzle.health-monitor.config.ts`), schema file, client and migration history. The two domains never share a query.
+Each database has its own Drizzle config (`drizzle.job-tracker.config.ts`, `drizzle.health-monitor.config.ts`, `drizzle.auth.config.ts`), schema file, client and migration history. The domains never share a query.
 
 **All database work is cloud-only.** Every `wrangler d1` command uses `--remote`; there is no `--local` SQLite emulation anywhere in the workflow. (The only exception is the disposable Miniflare-backed D1 instances that `@cloudflare/vitest-pool-workers` spins up inside test runs — those never persist.)
 
@@ -359,13 +360,30 @@ Seeding always runs against the cloud databases (`wrangler d1 execute <db> --rem
 
 The client never controls the `isDemo` field.
 
-The server assigns it automatically.
-
-Rules:
+The server assigns it automatically from the caller's identity (Version 2 — see ADR-012):
 
 - seed data uses `isDemo = true`;
-- guest-created data uses `isDemo = true`;
-- admin-created data uses `isDemo = false`.
+- guest-created data (no token) uses `isDemo = true`;
+- admin-created data (valid token) uses `isDemo = false`;
+- reads — including by-id — are scoped the same way: records outside the caller's scope return `404`.
+
+---
+
+# Admin Bootstrap (Version 2)
+
+There is no public registration. The single admin account is created (or its credentials rotated) via a one-time manual script:
+
+```bash
+ADMIN_EMAIL=... ADMIN_PASSWORD=... npx tsx scripts/create-admin.ts
+```
+
+The script:
+
+- validates password strength (minimum 12 characters — this is the single key to all real data);
+- normalizes the email to lowercase;
+- hashes the password with the same PBKDF2 module the runtime uses (`src/utils/password.ts`);
+- writes the `INSERT`/upsert into `auth-db` via `wrangler d1 execute auth-db --remote` (re-running with a new password updates the existing row, never creates a second admin);
+- never prints or persists the plaintext password.
 
 ---
 

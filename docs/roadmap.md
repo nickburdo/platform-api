@@ -212,24 +212,28 @@ The primary objective is to separate guest users from authenticated users and pr
 
 ---
 
+> Version 2 was re-scoped during planning (2026-07-01, see `plans/v2-plan.md` and ADR-012): the application is **single-tenant** — one admin account, closed registration, and "guest" means the absence of a valid token rather than a stored role. The task lists below reflect the as-designed version.
+
 ## Authentication
 
 Reference:
 
 - architecture.md
 - api.md
-- decisions.md
+- decisions.md (ADR-012)
+- plans/v2-plan.md
 
 Tasks:
 
-- [ ] Create `User` model
+- [ ] Create `User` model (single admin row, own `auth-db` database)
 - [ ] Create users table
-- [ ] Hash passwords
-- [ ] Implement registration
+- [ ] Hash passwords (salted PBKDF2 via WebCrypto)
+- [ ] Admin bootstrap script (`scripts/create-admin.ts`) — registration is closed, no public register endpoint
 - [ ] Implement login
-- [ ] Generate JWT access tokens
-- [ ] Validate JWT
-- [ ] Implement logout (if required)
+- [ ] Generate JWT access tokens (30-day expiry)
+- [ ] Validate JWT (signature + expiration)
+
+Logout is client-side only (discard the token) — no server-side revocation.
 
 ---
 
@@ -239,17 +243,12 @@ Reference:
 
 - api.md
 
-Roles:
-
-- ADMIN
-- GUEST
+There is exactly one non-guest role (`ADMIN`), so "authenticated" and "is admin" are the same check — no role middleware.
 
 Tasks:
 
-- [ ] Implement role middleware
-- [ ] Restrict protected endpoints
-- [ ] Return `401 Unauthorized` for unauthenticated requests
-- [ ] Return `403 Forbidden` for insufficient permissions
+- [ ] Identity-resolution middleware: no header → guest; valid token → admin; presented-but-invalid/expired token → `401` (never a silent guest fallback)
+- [ ] `GET /auth/me` requires a valid admin token (`401` otherwise)
 
 ---
 
@@ -262,9 +261,9 @@ Reference:
 
 Tasks:
 
-- [ ] Guest users can access only demo records
-- [ ] Guest users create only demo records
-- [ ] Admin users access real records
+- [ ] Guests (no token) read and create only demo records
+- [ ] Admin (valid token) reads and creates only real records
+- [ ] By-id operations are scope-filtered: a record outside the caller's scope returns `404`
 - [ ] Server manages `isDemo`
 
 The client must never send:
@@ -280,10 +279,9 @@ isDemo
 Tasks:
 
 - [ ] GET /auth/me
-- [ ] Register
 - [ ] Login
 
-Future endpoints such as password reset are intentionally postponed.
+Registration is closed (bootstrap script instead). Future endpoints such as password reset are intentionally postponed.
 
 ---
 
@@ -291,10 +289,10 @@ Future endpoints such as password reset are intentionally postponed.
 
 Tasks:
 
-- [ ] Protect private endpoints
-- [ ] Validate JWT expiration
-- [ ] Secure password hashing
-- [ ] Secure secret storage
+- [ ] Validate JWT expiration on every presented token
+- [ ] Secure password hashing (salted PBKDF2, documented parameters)
+- [ ] Secure secret storage (`wrangler secret` for `JWT_SECRET`, `.dev.vars` locally)
+- [ ] Uniform `401 Invalid credentials` for wrong email and wrong password alike
 
 ---
 
@@ -302,12 +300,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Register new user
-- [ ] Login
-- [ ] Verify JWT
-- [ ] Verify guest restrictions
-- [ ] Verify admin access
-- [ ] Verify unauthorized requests
+- [ ] Bootstrap script creates/rotates the admin without duplicating rows
+- [ ] Login (correct and wrong credentials)
+- [ ] Verify JWT (valid / expired / malformed / missing)
+- [ ] Verify guest scoping (reads, creates, by-id `404` for real records)
+- [ ] Verify admin scoping (reads, creates, by-id `404` for demo records)
+- [ ] Full V1 regression with and without a token
 
 ---
 
@@ -315,11 +313,11 @@ Tasks:
 
 Version 2 is complete when:
 
-- [ ] Authentication works
-- [ ] Authorization works
-- [ ] Guest users access only demo data
-- [ ] Admin users access real data
-- [ ] JWT validation is implemented
+- [ ] Login works; the admin receives a valid JWT
+- [ ] `GET /auth/me` works
+- [ ] No-token requests behave exactly as V1 (demo-scoped)
+- [ ] Admin requests are scoped to real data
+- [ ] Invalid/expired tokens are rejected with `401`
 - [ ] Documentation is updated
 
 ---

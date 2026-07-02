@@ -68,7 +68,7 @@ Reference: `models.md`
 
 - [ ] New database `auth-db`, schema `src/db/auth/schema.ts`, with a single table:
   - `users`: `id` (UUID), `email` (unique), `password_hash`, `role` (kept as a column for schema durability / future multi-role support, but only ever set to `"ADMIN"` in V2), `created_at`, `updated_at`
-- [ ] `models.md` — update `User`/`UserRole` to reflect that `GUEST` is never a persisted value (see Documentation Updates)
+- [x] `models.md` — update `User`/`UserRole` to reflect that `GUEST` is never a persisted value (done in the docs-first commit, see Documentation Updates)
 - [ ] Migration: generate via its own Drizzle config (`drizzle.auth.config.ts`), review, apply to the cloud database (`wrangler d1 migrations apply auth-db --remote`)
 - [ ] No schema changes needed in `job-tracker-db` or `health-monitor-db` — the existing `is_demo` flag from V1 is sufficient for the single-tenant ownership model
 
@@ -173,13 +173,14 @@ Reference: `api.md` (needs updating — see Documentation Updates)
 
 # 10. Documentation Updates Required
 
-Per ADR-005 (docs before implementation), these should be updated before/alongside building V2:
+Per ADR-005 (docs before implementation), these should be updated before/alongside building V2. **Completed 2026-07-02 as the docs-first commit, before any V2 code (Decision #12):**
 
-- [ ] `models.md` — finalize `User` (drop the implication that `GUEST` is ever persisted; note single-tenant); document that `job_applications`/Health Monitor entities gain no new fields (ownership is single-tenant, not per-user)
-- [ ] `api.md` — add concrete request/response schemas for `/auth/login`, `/auth/me`; remove or clearly mark `/auth/register` as not implemented in V2; add `401` cases to Job Tracker/Health Monitor endpoints
-- [ ] `roadmap.md` — Version 2's "Authentication"/"Authorization"/"User Management" task lists currently describe open registration and a `GUEST` role; update to reflect the single-tenant, closed-registration, guest-as-no-token design actually being built
-- [ ] `decisions.md` — add a new ADR recording the single-tenant / closed-registration / guest-as-absence-of-token decision, since it's a significant, discussed architectural choice (per the Decision Process in `decisions.md`: problem, decision, rationale, consequences)
-- [ ] `development.md` — document the `scripts/create-admin.ts` bootstrap workflow and the third `auth-db` database alongside the existing two
+- [x] `models.md` — finalize `User` (drop the implication that `GUEST` is ever persisted; note single-tenant); document that `job_applications`/Health Monitor entities gain no new fields (ownership is single-tenant, not per-user); Demo Data and Relationships sections updated for scope semantics incl. by-id `404` (Decision #11)
+- [x] `api.md` — Authentication convention section rewritten (identity resolution, 30-day HS256 JWT, 401 semantics per Decision #9); concrete request/response schemas for `/auth/login`, `/auth/me`; `/auth/register` explicitly marked not implemented; Demo Data section updated with scope rules and by-id `404`
+- [x] `roadmap.md` — Version 2 section rewritten to the single-tenant, closed-registration, guest-as-no-token design, with a pointer to this plan and ADR-012
+- [x] `decisions.md` — ADR-012 "Single-Tenant Authentication: Closed Registration, Guest as Absence of Token" (context / decision / rationale / consequences)
+- [x] `development.md` — `scripts/create-admin.ts` bootstrap workflow, third `auth-db` row in the database table, `JWT_SECRET` per environment (`wrangler secret` / `.dev.vars` / test binding), demo-data rules updated
+- [ ] `architecture.md` — **flagged as a gap in this section's original list**: the High Level Architecture diagram and D1 component section must gain the third database and the identity-resolution step; to be updated alongside implementation (proposed addition, pending user confirmation)
 
 ---
 
