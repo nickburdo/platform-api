@@ -72,4 +72,8 @@ INSERT INTO job_applications (
 
   ('2d8c489e-7e10-41e1-9c1e-4e86a8c2b8f7', 'PixelRail', 'Design Systems Engineer', 'https://example.com/jobs/pixelrail-design-systems', 'APPLIED', 'Company careers page',
    98000, 128000, 'USD', 'Portland, OR', 'HYBRID', 'Highlight component library and accessibility experience.',
-   strftime('%Y-%m-%dT%H:%M:%f', 'now', '-1 days') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 days') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 1);
+   strftime('%Y-%m-%dT%H:%M:%f', 'now', '-1 days') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 days') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 1),
+
+  ('0730e1e2-f04c-45e8-9515-0e8d2b4f6b6d', 'Quartz Analytics', 'Data Visualization Engineer', 'https://example.com/jobs/quartz-data-viz', 'WITHDRAWN', 'LinkedIn',
+   92000, 118000, 'USD', 'Remote, US', 'REMOTE', 'Withdrew after accepting that on-call rotation does not fit current schedule.',
+   strftime('%Y-%m-%dT%H:%M:%f', 'now', '-19 days') || 'Z', NULL, strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 1);

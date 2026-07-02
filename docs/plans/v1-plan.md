@@ -232,7 +232,7 @@ Reference: `development.md`, Decision #13, Decision #17 (sequencing)
 
 Seed is plain SQL, not a TypeScript script, and lives next to each database's schema. Runs immediately after the migrations in Section 2 are applied — no dependency on Sections 4–8 below.
 
-- [x] `src/db/job-tracker/seed.sql` — 16 job applications adapted from `docs/seed/job-tracker/seed.ts` (Decision #18), covering all 9 `JobApplicationStatus` values
+- [x] `src/db/job-tracker/seed.sql` — 17 job applications adapted from `docs/seed/job-tracker/seed.ts` (Decision #18), covering all 9 `JobApplicationStatus` values. Note: the original adaptation had only 16 rows over 8 statuses (the Prisma source contained no `WITHDRAWN` records) despite this line claiming all 9 — caught during Section 9.2 verification; a 17th `WITHDRAWN` fixture (`Quartz Analytics`) was added by user decision on 2026-07-02 and reseeded to the cloud.
 - [x] `src/db/health-monitor/seed.sql` — 10 rows each in `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries` (40 total), adapted from `docs/seed/health-monitor/seed.mjs` (Decision #18), spread across the last 30 days
 - [x] Every row in both files sets `is_demo = 1`
 - [x] Seed fixture rows use **fixed, hardcoded UUIDs** written directly into the SQL (not generated at seed time) — this keeps re-running the seed reproducible (same IDs every time) and makes manual Postman testing easier to script against stable IDs. Dates, by contrast, are computed relative to run time via SQLite functions, not fixed (Decision #20).
@@ -425,7 +425,7 @@ Per Decision #38: `.http` files under `http/` (one per resource) + `http-client.
 - [x] Verify pagination edges: page 0/negative, limit > 100, last page, empty page — 400/400/400/200-empty respectively
 - [x] Verify filtering: unknown `status` (400, enum-validated), unknown `company` (200 empty), partial `search` match (200)
 - [x] Verify ignore/restore round-trip for each Health Monitor resource — all four green on production; created records cleaned via `db:seed:health-monitor` reseed afterwards
-- [x] Verify `/jobs/meta` stats math against a known seeded dataset — total 16, interviews 6 (2 SCREENING + 2 TECHNICAL_INTERVIEW + 2 FINAL_INTERVIEW), offers 1, rejections 2, all three rates equal count/total. **Discrepancy found**: `statuses` contains 8 values, not 9 — `seed.sql` has no `WITHDRAWN` row, contradicting Section 3's "covering all 9 `JobApplicationStatus` values" claim (inaccurate since Section 3; live DB matches the seed exactly). Flagged for an explicit decision: fix the seed or correct Section 3's text.
+- [x] Verify `/jobs/meta` stats math against a known seeded dataset — interviews 6 (2 SCREENING + 2 TECHNICAL_INTERVIEW + 2 FINAL_INTERVIEW), offers 1, rejections 2, all three rates equal count/total. **Discrepancy found and resolved**: `statuses` initially contained 8 values, not 9 — `seed.sql` had no `WITHDRAWN` row, contradicting Section 3's "covering all 9 `JobApplicationStatus` values" claim (inaccurate since Section 3). User decision 2026-07-02: seed extended with a 17th `WITHDRAWN` fixture and reseeded; production `/jobs/meta` now returns all 9 statuses, total 17.
 
 Automated tests (originally not planned per `development.md`) were adopted in Decision #22 and cover all layers — see Section 9.1.
 
