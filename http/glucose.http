@@ -1,6 +1,8 @@
 # Glucose — create, update, ignore/restore round-trip (v1-plan.md Section 9.2)
 # Health Monitor has no DELETE: records created here stay as demo data;
 # `npm run db:seed:health-monitor` wipes and re-seeds all is_demo rows.
+# The "Admin" section at the bottom needs {{token}} — run auth.http's Login
+# request first (v2-plan.md Section 9).
 
 ### List — success (no pagination on Health Monitor)
 GET {{baseUrl}}/glucose
@@ -152,3 +154,61 @@ client.test('404 envelope', function () {
   client.assert(response.body.error.message === 'Resource not found', 'expected Resource not found');
 });
 %}
+
+###############################################################################
+# Admin — same endpoint, scoped to real (isDemo: false) data (v2-plan.md
+# Decisions #4/#11). Run auth.http's Login request first to populate {{token}}.
+###############################################################################
+
+### Admin create — real data, invisible to guest reads
+POST {{baseUrl}}/glucose
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "fastingValue": 91,
+  "note": "Admin HTTP Client verification"
+}
+
+> {%
+client.test('201, isDemo false', function () {
+  client.assert(response.status === 201, 'expected 201');
+  client.assert(response.body.data.isDemo === false, 'expected isDemo false for admin-created data');
+});
+client.global.set('adminGlucoseId', response.body.data.id);
+%}
+
+### Admin list — only sees real data, never the guest's demo rows
+GET {{baseUrl}}/glucose
+Authorization: Bearer {{token}}
+
+> {%
+client.test('200, all rows isDemo false', function () {
+  client.assert(response.status === 200, 'expected 200');
+  response.body.data.forEach(function (row) {
+    client.assert(row.isDemo === false, 'expected isDemo false on ' + row.id);
+  });
+});
+%}
+
+### Guest cannot patch the admin's real record by id — 404, not 403 (Decision #11)
+PATCH {{baseUrl}}/glucose/{{adminGlucoseId}}
+Content-Type: application/json
+
+{
+  "fastingValue": 95
+}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Admin cannot patch a guest/demo record by id either — 404 both directions
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "fastingValue": 95
+}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}

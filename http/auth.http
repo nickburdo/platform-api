@@ -1,0 +1,103 @@
+# Authentication — login, me, register-not-implemented (v2-plan.md Sections 7, 9)
+#
+# Login requires real admin credentials, which must NOT be committed.
+# Copy http-client.private.env.json.example -> http-client.private.env.json
+# (gitignored) and fill in {{adminEmail}}/{{adminPassword}} for the `prod`
+# environment before running the Login request below.
+#
+# Run top to bottom: Login stores {{token}} in client.global, reused by
+# GET /auth/me here and by the "Admin" sections in jobs.http / glucose.http.
+
+### Register — not implemented, falls through to global 404 (Decision #3)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "someone@example.com",
+  "password": "whatever12345"
+}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Login — wrong password → generic 401 (no user enumeration)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "definitely-the-wrong-password"
+}
+
+> {%
+client.test('401, generic message', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Invalid credentials', 'expected Invalid credentials');
+});
+%}
+
+### Login — unknown email → the same generic 401
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nobody-registered@example.com",
+  "password": "whatever12345"
+}
+
+> {%
+client.test('401, same message as wrong password', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Invalid credentials', 'expected Invalid credentials');
+});
+%}
+
+### Login — malformed body → 400
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "not-an-email"
+}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Login — success, issues a token
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+> {%
+client.test('200, token + user, no passwordHash', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(typeof response.body.data.token === 'string', 'expected data.token string');
+  client.assert(response.body.data.user.role === 'ADMIN', 'expected role ADMIN');
+  client.assert(!response.body.data.user.passwordHash, 'passwordHash must never be serialized');
+});
+client.global.set('token', response.body.data.token);
+%}
+
+### GET /auth/me — with the token from Login above
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+> {%
+client.test('200, matches the logged-in admin', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.email === '{{adminEmail}}', 'expected same email');
+});
+%}
+
+### GET /auth/me — without a token → 401 (guest)
+GET {{baseUrl}}/auth/me
+
+> {% client.test('401', function () { client.assert(response.status === 401, 'expected 401'); }); %}
+
+### GET /auth/me — malformed token → 401, never a silent guest fallback
+GET {{baseUrl}}/auth/me
+Authorization: Bearer not-a-jwt
+
+> {% client.test('401', function () { client.assert(response.status === 401, 'expected 401'); }); %}

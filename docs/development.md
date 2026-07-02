@@ -631,9 +631,11 @@ Request files live in `http/`, one per resource, with a `client.test(...)` asser
 
 ```text
 http/
-├── http-client.env.json    dev (localhost:8787) / prod environments
+├── http-client.env.json               dev (localhost:8787) / prod environments
+├── http-client.private.env.json.example   template for admin credentials (V2)
+├── auth.http                          Login, Me, Register (not implemented)
 ├── health.http
-├── jobs.http               List, Details, Create, Update, Delete, Meta
+├── jobs.http                          List, Details, Create, Update, Delete, Meta
 ├── glucose.http
 ├── blood-pressure.http
 ├── weight.http
@@ -653,6 +655,10 @@ Each endpoint is covered for:
 - demo data behavior.
 
 Health Monitor has no DELETE, so records created by manual runs stay in the cloud database — clean up with `npm run db:seed:health-monitor`.
+
+### Admin credentials (V2)
+
+`auth.http`'s Login request and the "Admin" sections in `jobs.http`/`glucose.http` need real admin credentials, which must never be committed. Copy `http-client.private.env.json.example` to `http-client.private.env.json` (gitignored) and fill in `adminEmail`/`adminPassword` for the `prod` environment. Run auth.http's Login request first — it stores `{{token}}` in the client's global variables, reused by every other file's Admin section for the rest of the session.
 
 ---
 

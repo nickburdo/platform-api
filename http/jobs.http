@@ -1,5 +1,7 @@
 # Job Tracker — full CRUD + meta + edge cases (v1-plan.md Section 9.2)
 # Run top to bottom: the Create request stores {{jobId}} for the later ones.
+# The "Admin" section at the bottom needs {{token}} — run auth.http's Login
+# request first (v2-plan.md Section 9).
 
 ### List — success, pagination envelope
 GET {{baseUrl}}/jobs?page=1&limit=5
@@ -205,3 +207,56 @@ client.test('200, success true', function () {
 DELETE {{baseUrl}}/jobs/{{jobId}}
 
 > {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+###############################################################################
+# Admin — same endpoints, scoped to real (isDemo: false) data (v2-plan.md
+# Decisions #4/#11). Run auth.http's Login request first to populate {{token}}.
+###############################################################################
+
+### Admin create — real data, invisible to guest reads
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "company": "Admin HTTP Client Co",
+  "position": "Manual Tester (real)"
+}
+
+> {%
+client.test('201, isDemo false', function () {
+  client.assert(response.status === 201, 'expected 201');
+  client.assert(response.body.data.isDemo === false, 'expected isDemo false for admin-created data');
+});
+client.global.set('adminJobId', response.body.data.id);
+%}
+
+### Admin list — only sees real data, never the guest's demo rows
+GET {{baseUrl}}/jobs
+Authorization: Bearer {{token}}
+
+> {%
+client.test('200, all rows isDemo false', function () {
+  client.assert(response.status === 200, 'expected 200');
+  response.body.data.forEach(function (row) {
+    client.assert(row.isDemo === false, 'expected isDemo false on ' + row.id);
+  });
+});
+%}
+
+### Guest cannot read the admin's real record by id — 404, not 403 (Decision #11)
+GET {{baseUrl}}/jobs/{{adminJobId}}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Admin cannot read a guest/demo record by id either — 404 both directions
+GET {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Cleanup — delete the admin test record
+DELETE {{baseUrl}}/jobs/{{adminJobId}}
+Authorization: Bearer {{token}}
+
+> {% client.test('200', function () { client.assert(response.status === 200, 'expected 200'); }); %}

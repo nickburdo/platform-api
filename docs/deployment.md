@@ -31,7 +31,9 @@ Hono Application
       │
       ├──────────────► Cloudflare D1: job-tracker-db
       │
-      └──────────────► Cloudflare D1: health-monitor-db
+      ├──────────────► Cloudflare D1: health-monitor-db
+      │
+      └──────────────► Cloudflare D1: auth-db (V2)
 ```
 
 No dedicated server is required.
@@ -81,8 +83,8 @@ The project is configured via `wrangler.jsonc`, which defines:
 
 - Worker name (`platform-api`)
 - compatibility date
-- **two** D1 bindings: `JOB_TRACKER_DB` → `job-tracker-db`, `HEALTH_MONITOR_DB` → `health-monitor-db`
-- `migrations_dir` per binding (`src/db/job-tracker/migrations`, `src/db/health-monitor/migrations`)
+- **three** D1 bindings: `JOB_TRACKER_DB` → `job-tracker-db`, `HEALTH_MONITOR_DB` → `health-monitor-db`, `AUTH_DB` → `auth-db` (V2)
+- `migrations_dir` per binding (`src/db/job-tracker/migrations`, `src/db/health-monitor/migrations`, `src/db/auth/migrations`)
 
 ---
 
@@ -90,11 +92,12 @@ The project is configured via `wrangler.jsonc`, which defines:
 
 ## Create the D1 Databases
 
-Both databases are created once:
+All databases are created once:
 
 ```bash
 npx wrangler d1 create job-tracker-db
 npx wrangler d1 create health-monitor-db
+npx wrangler d1 create auth-db
 ```
 
 Save each generated database ID into the corresponding binding in `wrangler.jsonc`.
@@ -108,6 +111,7 @@ One Drizzle config per database:
 ```bash
 npx drizzle-kit generate --config drizzle.job-tracker.config.ts
 npx drizzle-kit generate --config drizzle.health-monitor.config.ts
+npx drizzle-kit generate --config drizzle.auth.config.ts
 ```
 
 Review the generated SQL by hand before applying.
@@ -121,6 +125,7 @@ All migrations run against the cloud databases — there is no local database in
 ```bash
 npx wrangler d1 migrations apply job-tracker-db --remote
 npx wrangler d1 migrations apply health-monitor-db --remote
+npx wrangler d1 migrations apply auth-db --remote
 ```
 
 ---
@@ -137,13 +142,22 @@ npm run db:seed:health-monitor     # wrangler d1 execute health-monitor-db --rem
 
 Seed creates only demo records (`is_demo = 1`) and is idempotent: each file deletes only `is_demo = 1` rows before re-inserting, so non-demo data is never touched. Seeding is always an explicit manual command — it never runs automatically as part of deployment.
 
+`auth-db` has no seed file — it holds exactly one row (the admin), provisioned via the bootstrap script (see Admin Bootstrap below), never via demo fixtures.
+
 ---
 
 # Secrets
 
 Secrets must never be stored in Git.
 
-Example:
+`JWT_SECRET` is required starting with Version 2 — set it without ever printing the value to a terminal that gets logged:
+
+```powershell
+# generates a random value and pipes it directly into wrangler; nothing is echoed
+$bytes = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); [Convert]::ToBase64String($bytes) | npx wrangler secret put JWT_SECRET
+```
+
+or interactively:
 
 ```bash
 wrangler secret put JWT_SECRET
@@ -159,7 +173,17 @@ GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 ```
 
-Authentication secrets are required beginning with Version 2.
+---
+
+# Admin Bootstrap (Version 2)
+
+There is no public registration (ADR-012) — the single admin account is created directly against the cloud `auth-db` via a local script, run from the operator's own terminal so the plaintext password never appears in any shared session or log:
+
+```bash
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=a-strong-password npx tsx scripts/create-admin.ts
+```
+
+Re-running it with a new password rotates the existing admin's credentials — it upserts the single row rather than creating a second admin (v2-plan.md Decision #8). See `development.md` for details.
 
 ---
 
@@ -248,15 +272,15 @@ Verify:
 
 # Authentication Verification
 
-Version 2 only.
+Version 2.
 
 Verify:
 
-- register
-- login
-- JWT validation
-- role restrictions
-- demo data isolation
+- `POST /auth/register` → `404` (not implemented, closed registration)
+- `POST /auth/login` — correct credentials → token; wrong password / unknown email → identical `401`
+- `GET /auth/me` — valid token → 200; missing/invalid/expired token → `401`
+- a malformed/invalid token on a business endpoint (e.g. `GET /jobs`) → `401`, never a silent guest fallback
+- demo data isolation: guest and admin never see each other's records in list/meta, and cross-scope by-id access → `404`
 
 ---
 
@@ -265,26 +289,25 @@ Verify:
 Infrastructure
 
 - [x] Wrangler configured
-- [x] Worker created
-- [x] Both D1 databases connected
+- [x] All three D1 databases connected
 
 Database
 
 - [x] Migrations generated (per database)
 - [x] Migrations applied (`--remote`, per database)
-- [x] Seed executed (both databases)
+- [x] Seed executed (job-tracker-db, health-monitor-db — `auth-db` has no seed)
 
-Secrets (Version 2 — none required in V1)
+Secrets
 
-- [ ] JWT secret
-- [ ] Google credentials
+- [x] JWT secret
+- [ ] Google credentials (Version 3)
 
 Verification
 
 - [x] Health endpoint
 - [x] Job Tracker
 - [x] Health Monitor
-- [ ] Authentication (Version 2)
+- [x] Authentication (Version 2) — register/login/me/401-semantics/demo-isolation verified against production
 
 ---
 

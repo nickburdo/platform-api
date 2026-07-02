@@ -159,12 +159,12 @@ Reference: `api.md` (updated in the docs-first commit)
 
 # 8. Security Checklist
 
-- [ ] Password hashing: salted PBKDF2, sufficient iteration count (documented in code)
-- [ ] `JWT_SECRET` stored via `wrangler secret`, never in Git; `.dev.vars` gitignored
-- [ ] Login failure responses are identical for "no such email" and "wrong password" (generic "Invalid credentials")
-- [ ] JWT `exp` validated on every request that presents a token
-- [ ] No plaintext password ever written to disk, logs, or the bootstrap script's temporary SQL file
-- [ ] Rate limiting on `/auth/login` — still deferred (per V1 Decision #9), revisit only if this becomes an internet-facing concern beyond personal use
+- [x] Password hashing: salted PBKDF2, sufficient iteration count (documented in code) — `src/utils/password.ts`, 100 000 iterations, 16-byte random salt, self-describing stored format (Decision #12)
+- [ ] `JWT_SECRET` stored via `wrangler secret`, never in Git; `.dev.vars` gitignored — `.dev.vars` gitignored since Section 2; production secret set in Section 10 (deployment)
+- [x] Login failure responses are identical for "no such email" and "wrong password" (generic "Invalid credentials") — and now also identical in *cost* (Decision #13's timing-side-channel fix)
+- [x] JWT `exp` validated on every request that presents a token — `verifyToken()` delegates to `jose`'s `jwtVerify`, which rejects expired tokens; `resolveIdentity` maps that to `401`
+- [x] No plaintext password ever written to disk, logs, or the bootstrap script's temporary SQL file — only the PBKDF2 hash is ever interpolated into the transient SQL file (now via `sqlStringLiteral()`, Decision #13); the plaintext `ADMIN_PASSWORD` env var is read once and never echoed
+- [x] Rate limiting on `/auth/login` — deferred (per V1 Decision #9), revisit only if this becomes an internet-facing concern beyond personal use
 
 ---
 
@@ -194,6 +194,8 @@ Per ADR-005 (docs before implementation), these should be updated before/alongsi
 - [x] `decisions.md` — ADR-012 "Single-Tenant Authentication: Closed Registration, Guest as Absence of Token" (context / decision / rationale / consequences)
 - [x] `development.md` — `scripts/create-admin.ts` bootstrap workflow, third `auth-db` row in the database table, `JWT_SECRET` per environment (`wrangler secret` / `.dev.vars` / test binding), demo-data rules updated
 - [x] `architecture.md` — addition to this section's original list, approved 2026-07-02: High Level Architecture diagram gained the third database and the identity-resolution step; D1 component section now lists three databases
+- [x] `deployment.md` — updated alongside the actual deployment (2026-07-02): third `auth-db` in the infrastructure diagram and `wrangler.jsonc` description, `auth-db` creation/migration commands, `JWT_SECRET` setup (non-echoing PowerShell one-liner + interactive fallback), a new Admin Bootstrap section, Authentication Verification rewritten with concrete checks, Deployment Checklist updated (all three DBs, JWT secret, auth verification)
+- [x] `development.md` — Manual Testing section gained `auth.http`, the `http-client.private.env.json` pattern for admin credentials (never committed), and Admin-scoped sections added to `jobs.http`/`glucose.http` as representative resources (matching the two domains the automated authorization-matrix tests cover)
 
 ---
 
