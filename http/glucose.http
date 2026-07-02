@@ -1,0 +1,154 @@
+# Glucose — create, update, ignore/restore round-trip (v1-plan.md Section 9.2)
+# Health Monitor has no DELETE: records created here stay as demo data;
+# `npm run db:seed:health-monitor` wipes and re-seeds all is_demo rows.
+
+### List — success (no pagination on Health Monitor)
+GET {{baseUrl}}/glucose
+
+> {%
+client.test('200, data[], no meta', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(Array.isArray(response.body.data), 'expected data array');
+  client.assert(response.body.meta === undefined, 'expected no meta');
+});
+%}
+
+### List — empty result set for an ancient date range
+GET {{baseUrl}}/glucose?date_from=2000-01-01&date_to=2000-01-02
+
+> {%
+client.test('200, empty', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.length === 0, 'expected empty data');
+});
+%}
+
+### List — calendar-invalid date → 400 (Decision #21)
+GET {{baseUrl}}/glucose?date_from=2026-13-01
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Create — 201, exactly one value, server stamps (Decision #19, #10)
+POST {{baseUrl}}/glucose
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "fastingValue": 92,
+  "note": "HTTP Client verification"
+}
+
+> {%
+client.test('201, stamps', function () {
+  client.assert(response.status === 201, 'expected 201');
+  client.assert(response.body.data.isDemo === true, 'expected isDemo true');
+  client.assert(response.body.data.ignored === false, 'expected ignored false');
+  client.assert(response.body.data.fastingValue === 92, 'expected fastingValue 92');
+  client.assert(response.body.data.afterMealValue === null, 'expected afterMealValue null');
+});
+client.global.set('glucoseId', response.body.data.id);
+%}
+
+### Create — both values → 400 (Decision #19)
+POST {{baseUrl}}/glucose
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "fastingValue": 92,
+  "afterMealValue": 130
+}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Create — neither value → 400 (Decision #19)
+POST {{baseUrl}}/glucose
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z"
+}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Update — switch to afterMealValue (fasting must be nulled, Decision #19/#25)
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+
+{
+  "afterMealValue": 128
+}
+
+> {%
+client.test('200, value switched', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.afterMealValue === 128, 'expected afterMealValue 128');
+  client.assert(response.body.data.fastingValue === null, 'expected fastingValue nulled');
+});
+%}
+
+### Ignore — requires reason (Decision #26)
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+
+{
+  "ignored": true,
+  "reason": "Incorrect measurement"
+}
+
+> {%
+client.test('200, ignored', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.ignored === true, 'expected ignored true');
+  client.assert(response.body.data.reason === 'Incorrect measurement', 'expected reason set');
+});
+%}
+
+### Ignore without reason → 400 (Decision #26)
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+
+{
+  "ignored": true
+}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Restore
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+
+{
+  "ignored": false,
+  "reason": ""
+}
+
+> {%
+client.test('200, restored', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.ignored === false, 'expected ignored false');
+});
+%}
+
+### Update — empty body → 400 (Decision #33)
+PATCH {{baseUrl}}/glucose/{{glucoseId}}
+Content-Type: application/json
+
+{}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Update — invalid identifier → 404 envelope
+PATCH {{baseUrl}}/glucose/definitely-not-an-id
+Content-Type: application/json
+
+{
+  "fastingValue": 95
+}
+
+> {%
+client.test('404 envelope', function () {
+  client.assert(response.status === 404, 'expected 404');
+  client.assert(response.body.error.message === 'Resource not found', 'expected Resource not found');
+});
+%}

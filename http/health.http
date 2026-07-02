@@ -1,0 +1,21 @@
+# Health — liveness probe (v1-plan.md Section 7.1)
+
+### GET /health — success
+GET {{baseUrl}}/health
+
+> {%
+client.test('200 with ok envelope', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.status === 'ok', 'expected data.status ok');
+});
+%}
+
+### Unknown path — 404 envelope
+GET {{baseUrl}}/no-such-resource
+
+> {%
+client.test('404 with error envelope', function () {
+  client.assert(response.status === 404, 'expected 404');
+  client.assert(response.body.error.message === 'Not found', 'expected Not found');
+});
+%}

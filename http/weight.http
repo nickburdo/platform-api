@@ -1,0 +1,84 @@
+# Weight — create, ignore/restore round-trip (v1-plan.md Section 9.2)
+# No DELETE on Health Monitor: reseed via `npm run db:seed:health-monitor` cleans up.
+
+### List — success
+GET {{baseUrl}}/weight
+
+> {%
+client.test('200, data[]', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(Array.isArray(response.body.data), 'expected data array');
+});
+%}
+
+### Create — 201 with server stamps
+POST {{baseUrl}}/weight
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "value": 82.3,
+  "note": "HTTP Client verification"
+}
+
+> {%
+client.test('201, stamps', function () {
+  client.assert(response.status === 201, 'expected 201');
+  client.assert(response.body.data.isDemo === true, 'expected isDemo true');
+  client.assert(response.body.data.value === 82.3, 'expected value 82.3');
+});
+client.global.set('weightId', response.body.data.id);
+%}
+
+### Create — non-positive value → 400
+POST {{baseUrl}}/weight
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "value": 0
+}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Ignore
+PATCH {{baseUrl}}/weight/{{weightId}}
+Content-Type: application/json
+
+{
+  "ignored": true,
+  "reason": "Measurement duplicated"
+}
+
+> {%
+client.test('200, ignored', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.ignored === true, 'expected ignored true');
+});
+%}
+
+### Restore
+PATCH {{baseUrl}}/weight/{{weightId}}
+Content-Type: application/json
+
+{
+  "ignored": false,
+  "reason": ""
+}
+
+> {%
+client.test('200, restored', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.ignored === false, 'expected ignored false');
+});
+%}
+
+### Update — invalid identifier → 404
+PATCH {{baseUrl}}/weight/definitely-not-an-id
+Content-Type: application/json
+
+{
+  "value": 81
+}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}

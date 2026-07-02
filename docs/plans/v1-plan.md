@@ -405,27 +405,29 @@ Reference: `development.md`, Decision #22 (automated tests adopted)
 
 Per Decision #38: `.http` files under `http/` (one per resource) + `http-client.env.json` with `dev`/`prod` environments — not a Postman/Bruno collection.
 
-- [ ] Build the `.http` request files matching the structure in `development.md`:
+- [x] Build the `.http` request files matching the structure in `development.md`:
   ```text
   http/
+  ├── http-client.env.json   (dev → 127.0.0.1:8787, prod → platform-api.nick-burdo.workers.dev)
   ├── health.http
   ├── jobs.http          (List, Details, Create, Update, Delete, Meta)
   ├── glucose.http, blood-pressure.http, weight.http, symptoms.http
   └── dashboard.http
   ```
-- [ ] Per endpoint, verify:
-  - [ ] successful request
-  - [ ] validation error (400)
-  - [ ] resource not found (404)
-  - [ ] invalid identifier
-  - [ ] empty result set
-  - [ ] demo data behavior (`isDemo` present and correct)
-- [ ] Verify pagination edges: page 0/negative, limit > 100, last page, empty page
-- [ ] Verify filtering: unknown `status`, unknown `company`, partial `search` match
-- [ ] Verify ignore/restore round-trip for each Health Monitor resource
-- [ ] Verify `/jobs/meta` stats math against a known seeded dataset
+  Every request carries a `client.test(...)` assertion block; POST responses chain their `id` into the follow-up PATCH/DELETE requests via `client.global`.
+- [x] Per endpoint, verify (every assertion in the `.http` files was executed against the production URL on 2026-07-02 via equivalent curl requests; the files encode the same checks for repeatable runs from WebStorm):
+  - [x] successful request
+  - [x] validation error (400)
+  - [x] resource not found (404)
+  - [x] invalid identifier
+  - [x] empty result set
+  - [x] demo data behavior (`isDemo` present and correct)
+- [x] Verify pagination edges: page 0/negative, limit > 100, last page, empty page — 400/400/400/200-empty respectively
+- [x] Verify filtering: unknown `status` (400, enum-validated), unknown `company` (200 empty), partial `search` match (200)
+- [x] Verify ignore/restore round-trip for each Health Monitor resource — all four green on production; created records cleaned via `db:seed:health-monitor` reseed afterwards
+- [x] Verify `/jobs/meta` stats math against a known seeded dataset — total 16, interviews 6 (2 SCREENING + 2 TECHNICAL_INTERVIEW + 2 FINAL_INTERVIEW), offers 1, rejections 2, all three rates equal count/total. **Discrepancy found**: `statuses` contains 8 values, not 9 — `seed.sql` has no `WITHDRAWN` row, contradicting Section 3's "covering all 9 `JobApplicationStatus` values" claim (inaccurate since Section 3; live DB matches the seed exactly). Flagged for an explicit decision: fix the seed or correct Section 3's text.
 
-No automated test suite is planned for V1 per `development.md` ("Version 1 relies primarily on manual API testing") — confirm this still holds or whether we want to add automated tests now while the surface is small.
+Automated tests (originally not planned per `development.md`) were adopted in Decision #22 and cover all layers — see Section 9.1.
 
 ---
 
@@ -475,6 +477,6 @@ From `roadmap.md`, plus automated tests per Decision #22:
 - [x] Validation is implemented
 - [x] Automated unit tests pass (`npm test`) — currently covers all Zod schemas; extends to Repositories/Services as they're built
 - [x] Seed is available
-- [ ] Manual verification complete (JetBrains HTTP Client, Decision #38)
+- [x] Manual verification complete (JetBrains HTTP Client, Decision #38)
 - [x] Deployment works — https://platform-api.nick-burdo.workers.dev
 - [ ] Documentation is updated

@@ -1,0 +1,207 @@
+# Job Tracker — full CRUD + meta + edge cases (v1-plan.md Section 9.2)
+# Run top to bottom: the Create request stores {{jobId}} for the later ones.
+
+### List — success, pagination envelope
+GET {{baseUrl}}/jobs?page=1&limit=5
+
+> {%
+client.test('200, data[] + meta', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(Array.isArray(response.body.data), 'expected data array');
+  client.assert(response.body.meta.page === 1, 'expected meta.page 1');
+  client.assert(response.body.meta.limit === 5, 'expected meta.limit 5');
+});
+%}
+
+### List — demo data behavior: every seeded row has isDemo true
+GET {{baseUrl}}/jobs?limit=100
+
+> {%
+client.test('all rows isDemo', function () {
+  client.assert(response.status === 200, 'expected 200');
+  response.body.data.forEach(function (row) {
+    client.assert(row.isDemo === true, 'expected isDemo true on ' + row.id);
+  });
+});
+%}
+
+### Pagination edge — page 0 → 400
+GET {{baseUrl}}/jobs?page=0
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Pagination edge — negative page → 400
+GET {{baseUrl}}/jobs?page=-1
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Pagination edge — limit > 100 → 400
+GET {{baseUrl}}/jobs?limit=1000
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Pagination edge — far page → 200 with empty data (last/empty page)
+GET {{baseUrl}}/jobs?page=999
+
+> {%
+client.test('200, empty page', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.length === 0, 'expected empty data');
+  client.assert(response.body.meta.total > 0, 'expected non-zero total');
+});
+%}
+
+### Filtering — unknown status → 400 (enum-validated)
+GET {{baseUrl}}/jobs?status=MADE_UP
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Filtering — unknown company → 200 empty result set
+GET {{baseUrl}}/jobs?company=NoSuchCompanyEver
+
+> {%
+client.test('200, empty', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.length === 0, 'expected empty data');
+});
+%}
+
+### Filtering — partial search match
+GET {{baseUrl}}/jobs?search=Dev
+
+> {% client.test('200', function () { client.assert(response.status === 200, 'expected 200'); }); %}
+
+### Meta — companies + statuses + stats, rate math consistent
+GET {{baseUrl}}/jobs/meta
+
+> {%
+client.test('200, stats math', function () {
+  client.assert(response.status === 200, 'expected 200');
+  var s = response.body.data.stats;
+  client.assert(Array.isArray(response.body.data.companies), 'expected companies array');
+  client.assert(s.total > 0, 'expected non-zero total');
+  client.assert(Math.abs(s.interviewRate - s.interviews / s.total) < 1e-9, 'interviewRate = interviews/total');
+  client.assert(Math.abs(s.offerRate - s.offers / s.total) < 1e-9, 'offerRate = offers/total');
+  client.assert(Math.abs(s.rejectionRate - s.rejections / s.total) < 1e-9, 'rejectionRate = rejections/total');
+});
+%}
+
+### Create — 201, server-managed fields stamped
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+
+{
+  "company": "HTTP Client Co",
+  "position": "Manual Tester"
+}
+
+> {%
+client.test('201, defaults + isDemo', function () {
+  client.assert(response.status === 201, 'expected 201');
+  client.assert(response.body.data.isDemo === true, 'expected isDemo true');
+  client.assert(response.body.data.status === 'SAVED', 'expected default status SAVED');
+  client.assert(response.body.data.currency === 'USD', 'expected default currency USD');
+});
+client.global.set('jobId', response.body.data.id);
+%}
+
+### Create — validation error → 400 with field details
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+
+{
+  "position": "No company"
+}
+
+> {%
+client.test('400, details.company', function () {
+  client.assert(response.status === 400, 'expected 400');
+  client.assert(response.body.error.message === 'Validation error', 'expected Validation error');
+  client.assert(!!response.body.error.details.company, 'expected details.company');
+});
+%}
+
+### Create — server-managed field in body → 400 (Decision #32)
+POST {{baseUrl}}/jobs
+Content-Type: application/json
+
+{
+  "company": "HTTP Client Co",
+  "position": "Manual Tester",
+  "isDemo": false
+}
+
+> {%
+client.test('400, _errors', function () {
+  client.assert(response.status === 400, 'expected 400');
+  client.assert(!!response.body.error.details._errors, 'expected details._errors');
+});
+%}
+
+### Details — success
+GET {{baseUrl}}/jobs/{{jobId}}
+
+> {%
+client.test('200, same id', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.id === client.global.get('jobId'), 'expected same id');
+});
+%}
+
+### Details — invalid identifier → 404 envelope
+GET {{baseUrl}}/jobs/definitely-not-an-id
+
+> {%
+client.test('404 envelope', function () {
+  client.assert(response.status === 404, 'expected 404');
+  client.assert(response.body.error.message === 'Resource not found', 'expected Resource not found');
+});
+%}
+
+### Update — partial patch
+PATCH {{baseUrl}}/jobs/{{jobId}}
+Content-Type: application/json
+
+{
+  "status": "APPLIED"
+}
+
+> {%
+client.test('200, status updated', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.status === 'APPLIED', 'expected APPLIED');
+});
+%}
+
+### Update — empty body → 400 (Decision #33)
+PATCH {{baseUrl}}/jobs/{{jobId}}
+Content-Type: application/json
+
+{}
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Update — unknown id → 404
+PATCH {{baseUrl}}/jobs/definitely-not-an-id
+Content-Type: application/json
+
+{
+  "status": "APPLIED"
+}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Delete — success envelope
+DELETE {{baseUrl}}/jobs/{{jobId}}
+
+> {%
+client.test('200, success true', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(response.body.data.success === true, 'expected success true');
+});
+%}
+
+### Delete — repeat → 404
+DELETE {{baseUrl}}/jobs/{{jobId}}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}

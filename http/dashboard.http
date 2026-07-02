@@ -1,0 +1,29 @@
+# Dashboard — aggregated Health Monitor data (v1-plan.md Section 9.2)
+
+### Success — no date range
+GET {{baseUrl}}/dashboard
+
+> {%
+client.test('200, four collections', function () {
+  client.assert(response.status === 200, 'expected 200');
+  client.assert(Array.isArray(response.body.data.glucoseMeasurements), 'expected glucoseMeasurements');
+  client.assert(Array.isArray(response.body.data.bloodPressureMeasurements), 'expected bloodPressureMeasurements');
+  client.assert(Array.isArray(response.body.data.weightMeasurements), 'expected weightMeasurements');
+  client.assert(Array.isArray(response.body.data.symptomEntries), 'expected symptomEntries');
+});
+%}
+
+### Success — with date range
+GET {{baseUrl}}/dashboard?date_from=2026-06-01&date_to=2026-07-02
+
+> {% client.test('200', function () { client.assert(response.status === 200, 'expected 200'); }); %}
+
+### date_from after date_to → 400
+GET {{baseUrl}}/dashboard?date_from=2026-06-30&date_to=2026-06-01
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
+
+### Calendar-invalid date → 400 (Decision #21)
+GET {{baseUrl}}/dashboard?date_from=2026-02-30
+
+> {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
