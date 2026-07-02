@@ -45,6 +45,14 @@ Resolved during planning discussion (2026-07-01):
    - Running it again with a new password performs an upsert (update the single existing row) rather than creating a second admin
 9. **Token validation policy on V1 endpoints** — no `Authorization` header → treated as guest (demo scope). A header that is present but invalid/malformed/expired → `401 Unauthorized`, never a silent fallback to guest — this prevents an admin with a stale token from unknowingly writing demo data.
 10. **No `authorize(role)` middleware in V2** — since there is exactly one non-guest role, "authenticated" and "is admin" are the same check. A role-based authorization layer is deferred until a real second role (e.g. multi-tenant admins) is introduced; adding it now would be unused complexity.
+11. **By-id operations are demo-scoped** (plan revision, approved 2026-07-02) — V1's `findById`/`update`/`delete` repository functions filter only by `id`; V2 extends all of them (all five business repositories) with the `isDemo` filter derived from the caller's identity scope. A record outside the caller's scope behaves as nonexistent → `404`, never `403` — the existence of the other world's records is not disclosed. Without this, a guest could read/patch/delete a real record by guessing its id (and the admin could accidentally modify demo fixtures). Sections 5 and 9 updated accordingly.
+12. **Implementation details fixed at planning follow-up** (2026-07-02, proposed with rationale and accepted):
+    - PBKDF2: **100 000 iterations**, 16-byte random salt, 32-byte output; stored self-describing as `pbkdf2-sha256:<iterations>:<salt-b64>:<hash-b64>` so iteration count can be raised later without re-hashing existing rows (`verify` reads parameters from the stored value). After deployment, measure login CPU time on the real Worker against plan limits.
+    - Emails are normalized to lowercase by the bootstrap script and at login; the unique index applies to the normalized value.
+    - JWT payload gains `iat` alongside `sub`/`role`/`exp` (Decision #7).
+    - `.dev.vars` is gitignored; a `.dev.vars.example` is committed.
+    - Tests follow V1's layering (v1-plan Decision #22): unit tests + real-D1 repo/service/route tests in the Workers pool; `vitest.workers.config.ts` gains a `TEST_AUTH_MIGRATIONS` binding and a fixed dummy `JWT_SECRET` binding.
+    - Documentation-first ordering confirmed: Section 10's `models.md`/`api.md`/`roadmap.md`/`decisions.md` updates land as their own commit **before any V2 code**; `development.md`'s bootstrap/auth-db workflow is written as-designed in the same pass; `deployment.md` additions land with the actual deployment.
 
 ---
 
@@ -105,6 +113,7 @@ Reference: `models.md`
     - No valid admin token → forced `isDemo: true` on create, filtered to `isDemo: true` on read (unchanged from V1 behavior)
     - Valid admin token → forced `isDemo: false` on create, filtered to `isDemo: false` on read
   - Continue rejecting any client-supplied `isDemo` in request bodies
+- [ ] Extend `findById`/`update`/`delete` in **all five** business repositories with the `isDemo` filter (Decision #11): out-of-scope ids behave as nonexistent → `404`. Existing repo/service/route tests updated for the new signatures.
 
 ---
 
@@ -157,7 +166,8 @@ Reference: `api.md` (needs updating — see Documentation Updates)
 - [ ] No-token request to Job Tracker/Health Monitor → demo-scoped behavior (matches V1 exactly)
 - [ ] Valid admin token → real-data-scoped behavior (`isDemo: false` on create, filtered reads)
 - [ ] Expired/malformed token on Job Tracker/Health Monitor → `401`, not a silent guest fallback
-- [ ] Full regression of the V1 Postman collection against the new identity-resolution layer (both with and without a token)
+- [ ] Cross-scope by-id access (Decision #11): guest GET/PATCH/DELETE of a real record's id → `404`; admin GET/PATCH of a demo record's id → `404`
+- [ ] Full regression of the V1 manual collection (`http/`, JetBrains HTTP Client per v1-plan Decision #38 — supersedes this plan's original "Postman collection" wording) against the new identity-resolution layer, both with and without a token
 
 ---
 
