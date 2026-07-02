@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
+    "dev": "wrangler dev --remote",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
