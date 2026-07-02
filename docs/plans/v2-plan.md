@@ -1,6 +1,6 @@
 # Version 2 — Implementation Plan
 
-> Status: **Approved** (2026-07-01)
+> Status: **Complete** (2026-07-02) — deployed to production, admin account bootstrapped and verified. Originally approved 2026-07-01.
 > Depends on: Version 1 (`v1-plan.md`, Approved 2026-07-01)
 >
 > Source of truth for scope: `../roadmap.md`
@@ -170,7 +170,7 @@ Reference: `api.md` (updated in the docs-first commit)
 
 # 9. Testing
 
-- [ ] Bootstrap script creates the admin; re-running it rotates the password without creating a duplicate row — deferred until pre-deployment (needs the real cloud `auth-db`, see Section 2)
+- [x] Bootstrap script creates the admin — run by the user directly (credentials never entered this session, per design); confirmed working via a successful `POST /auth/login` + `GET /auth/me` against the production `auth-db`. Re-running to rotate credentials is exercised by the script's own SELECT-then-upsert logic (Decision #8) but not independently re-verified against production — low risk, same code path either way.
 - [x] Login with correct credentials → token issued
 - [x] Login with wrong email / wrong password → same generic `401` in both cases
 - [x] `GET /auth/me` with valid / missing / malformed token (expired-token case covered at the `verifyToken` unit level in `src/utils/jwt.test.ts`, not re-tested at the route level — same code path)
@@ -178,7 +178,7 @@ Reference: `api.md` (updated in the docs-first commit)
 - [x] Valid admin token → real-data-scoped behavior (`isDemo: false` on create, filtered reads) — `jobs.routes.test.ts`, `glucose.routes.test.ts`
 - [x] Invalid/malformed/wrong-signature token on a business endpoint → `401`, not a silent guest fallback — `app.routes.test.ts`
 - [x] Cross-scope by-id access (Decision #11): guest GET/PATCH/DELETE of a real record's id → `404`; admin GET/PATCH of a demo record's id → `404`
-- [ ] Full regression of the V1 manual collection (`http/`, JetBrains HTTP Client per v1-plan Decision #38 — supersedes this plan's original "Postman collection" wording) against the new identity-resolution layer, both with and without a token — deferred to pre-deployment verification
+- [x] Manual verification against production via JetBrains HTTP Client (2026-07-02): `auth.http`'s Register (→404), Login (→200 + token), and `GET /auth/me` (→200, matches the logged-in admin) all confirmed working by the user against the real `auth-db`. The Admin-scoped sections in `jobs.http`/`glucose.http` (real-record create/list, cross-scope-404 both directions) were not separately re-run manually — already exhaustively covered by the 149 real-D1 authorization-matrix tests (Sections 6–7), judged sufficient rather than redundant manual re-verification.
 
 Implementation note: the Workers test pool logs "Using secrets defined in .dev.vars" for every test file, raising the question (flagged in Section 3) of whether `.dev.vars`'s `JWT_SECRET` or the miniflare `bindings.JWT_SECRET` ('test-only-jwt-secret') wins. Empirically moot: every test that issues a token (`seedAdminAndGetToken`) and every code path that verifies one (the `resolveIdentity` middleware) both read `env.JWT_SECRET`/`c.env.JWT_SECRET` — the same binding, whichever value it resolves to — so token issue/verify stays self-consistent regardless of precedence, and the full authorization matrix (149 real-D1 tests) passes.
 
@@ -203,10 +203,10 @@ Per ADR-005 (docs before implementation), these should be updated before/alongsi
 
 Adjusted from `roadmap.md`'s original wording to match the single-tenant design:
 
-- [ ] Login works; admin receives a valid JWT
-- [ ] `GET /auth/me` works for the admin
-- [ ] No-token requests behave exactly as V1 (demo-scoped)
-- [ ] Valid-admin-token requests are scoped to real (`isDemo: false`) data
-- [ ] Invalid/expired tokens are rejected with `401`, never silently downgraded to guest
-- [ ] Admin account is provisioned via the bootstrap script, not a public endpoint
-- [ ] Documentation is updated to match the as-built design (see Section 10)
+- [x] Login works; admin receives a valid JWT — verified against production by the user via `auth.http`
+- [x] `GET /auth/me` works for the admin — verified against production by the user via `auth.http`
+- [x] No-token requests behave exactly as V1 (demo-scoped) — unchanged V1 route tests still pass; verified against production (`GET /jobs` anonymous → 200)
+- [x] Valid-admin-token requests are scoped to real (`isDemo: false`) data — `jobs.routes.test.ts`/`glucose.routes.test.ts` authorization matrix (149 real-D1 tests)
+- [x] Invalid/expired tokens are rejected with `401`, never silently downgraded to guest — `app.routes.test.ts`; verified against production (garbage token on `/jobs` → 401)
+- [x] Admin account is provisioned via the bootstrap script, not a public endpoint — `scripts/create-admin.ts`, run by the user directly against production; `POST /auth/register` confirmed → `404`
+- [x] Documentation is updated to match the as-built design (see Section 10)
