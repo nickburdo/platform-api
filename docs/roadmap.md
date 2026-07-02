@@ -326,7 +326,7 @@ Version 2 is complete when:
 
 ## Goal
 
-Improve developer experience and authentication options.
+Improve developer experience and authentication options, without changing the single-tenant, closed-registration model from Version 2 (see `plans/v3-plan.md` and ADR-013).
 
 ---
 
@@ -334,11 +334,11 @@ Improve developer experience and authentication options.
 
 Tasks:
 
-- [ ] Configure Google OAuth
-- [ ] Login with Google
-- [ ] Issue Platform API JWT after Google authentication
+- [ ] Configure Google OAuth (Google Cloud Console app, scope `openid email` only)
+- [ ] Login with Google, matched against the single admin's existing email — **no new account is ever created** (ADR-013)
+- [ ] Issue Platform API JWT after Google authentication, identical in shape to a password-issued token
 
-Google authentication should become an additional login method.
+Google authentication is an additional login method for the one existing admin account, not a second way to create accounts.
 
 JWT remains the only authentication mechanism used by the API.
 
@@ -348,9 +348,9 @@ JWT remains the only authentication mechanism used by the API.
 
 Tasks:
 
-- [ ] Generate OpenAPI specification
+- [ ] Generate OpenAPI specification from the project's existing Zod schemas (standalone registry, not a route rewrite — see `plans/v3-plan.md` Decision #10)
 - [ ] Keep documentation synchronized
-- [ ] Validate specification
+- [ ] Validate specification (lint-clean)
 
 ---
 
@@ -359,7 +359,7 @@ Tasks:
 Tasks:
 
 - [ ] Install Swagger UI
-- [ ] Publish API documentation
+- [ ] Serve at `/docs`, no authentication required to view
 - [ ] Group endpoints by resource
 
 ---
@@ -378,9 +378,11 @@ Tasks:
 
 Tasks:
 
-- [ ] Request logging
+- [ ] Request logging (structured, with a per-request `X-Request-Id`)
 - [ ] Error logging
 - [ ] Performance monitoring
+
+Cloudflare-native tooling only (Analytics, Worker Logs, D1 Metrics) — no third-party APM.
 
 ---
 
@@ -388,11 +390,11 @@ Tasks:
 
 Version 3 is complete when:
 
-- [ ] Google Login works
-- [ ] Swagger UI is available
-- [ ] OpenAPI specification is generated
+- [ ] Google Login works for the existing admin account, and only for that account
+- [ ] Swagger UI is available at `/docs`
+- [ ] OpenAPI specification is generated from Zod schemas and lint-clean
 - [ ] Documentation is synchronized
-- [ ] Production monitoring is configured
+- [ ] Production monitoring is configured across all three databases
 
 ---
 

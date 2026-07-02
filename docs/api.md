@@ -118,6 +118,7 @@ Unknown **query parameters**, by contrast, are ignored.
 | 200    | Successful request                       |
 | 201    | Resource created                         |
 | 204    | Successful request without response body |
+| 302    | Redirect (Google Sign-In only)           |
 | 400    | Validation error                         |
 | 401    | Unauthorized                             |
 | 403    | Forbidden                                |
@@ -829,6 +830,8 @@ Returns aggregated Health Monitor data.
 
 Introduced in Version 2. See the Authentication section above for identity-resolution rules.
 
+Version 3 adds Google Sign-In as an alternative login method for the same single admin account — see ADR-013. It never creates a new account: a Google account whose email doesn't match the existing admin is rejected.
+
 ---
 
 ## POST /auth/register
@@ -916,6 +919,50 @@ Missing, invalid or expired token:
 ```http
 401 Unauthorized
 ```
+
+---
+
+## GET /auth/google
+
+Redirects the browser to Google's consent screen to begin Google Sign-In. Requested scope: `openid email` only.
+
+### Response
+
+```http
+302 Found
+Location: https://accounts.google.com/o/oauth2/v2/auth?...&state=<signed-state>
+```
+
+`state` is a short-lived (10 minute), server-signed token — not a value the client generates or interprets.
+
+---
+
+## GET /auth/google/callback
+
+Google redirects here after the user consents, with `code` and `state` query parameters.
+
+* `state` missing, invalid, expired, or not issued by this server → `401`, before any call to Google is made.
+* `state` valid, but the Google account's email doesn't match the existing admin's email (case-insensitive) → `401`. **No account is ever created.**
+* `state` valid and the email matches → behaves exactly like a successful `POST /auth/login`:
+
+### Response
+
+```json
+{
+  "data": {
+    "token": "<jwt>",
+    "user": {
+      "id": "user_1",
+      "email": "admin@example.com",
+      "role": "ADMIN",
+      "createdAt": "2026-07-02T10:00:00.000Z",
+      "updatedAt": "2026-07-02T10:00:00.000Z"
+    }
+  }
+}
+```
+
+The issued token is identical in shape (claims, expiry) to one issued by `POST /auth/login` — callers cannot tell which method was used to obtain it.
 
 ---
 

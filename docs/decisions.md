@@ -567,6 +567,51 @@ Version 2 introduces authentication. The application serves exactly one real dat
 
 ---
 
+# ADR-013
+
+## Title
+
+Google Login as an Additional Method for the Single Admin Account, No New-Account Creation
+
+---
+
+### Status
+
+Accepted (2026-07-03, Version 3 planning)
+
+---
+
+### Context
+
+Version 3 adds Google OAuth as an alternative login method. Version 2's single-tenant model (ADR-012) established that exactly one admin account exists, created only via the out-of-band bootstrap script. Google Sign-In conventionally auto-provisions an account on first login — that behavior would silently reopen the registration surface ADR-012 deliberately closed.
+
+---
+
+### Decision
+
+- Google login is matched against the single admin's existing `email` in `auth-db` (case-insensitive exact match). If the Google account's email doesn't match, the login is rejected (`401`) and **no new account is ever created**.
+- `passwordHash` stays required on `users` — the admin account must already exist (via `scripts/create-admin.ts`) before Google login can ever succeed for it. Google is purely an additional login method for that same account, never a Google-only signup path.
+- The OAuth redirect (`GET /auth/google` → `GET /auth/google/callback`) is protected against CSRF via a signed, storageless `state` parameter (a short-lived JWT signed with the existing `JWT_SECRET`, carrying a `purpose: 'oauth_state'` claim) rather than a server-side session — consistent with the stateless architecture ADR-012 established.
+- The code→token and token→profile exchange with Google uses two raw `fetch` calls, not an OAuth client library — the exchange itself has no cryptography of its own (unlike JWT signing, which justified adding `jose` in V2).
+
+---
+
+### Rationale
+
+- Preserves the single-tenant guarantee: however a request authenticates, it can only ever resolve to the one provisioned admin, never mint a new identity.
+- A signed `state` token needs no new infrastructure (no KV, no sessions table) and reuses a secret and library the app already trusts.
+- Avoiding a new OAuth dependency keeps the same "add a library only for capabilities you can't safely reimplement" discipline `jose`'s addition followed.
+
+---
+
+### Consequences
+
+- A Google account that has never been the admin's login method still works the moment its email matches the existing row — no separate "link your Google account" step is needed or offered.
+- If the admin ever changes their Google account's email, Google login for the new address won't work until `scripts/create-admin.ts` is re-run to update the stored email — an accepted operational tradeoff of matching on email rather than Google's stable account ID.
+- `resolveIdentity` (V2) requires zero changes — a Google-issued token is indistinguishable in shape from a password-issued one.
+
+---
+
 # Future Decisions
 
 Future ADRs may include:

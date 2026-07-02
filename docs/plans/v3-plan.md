@@ -31,29 +31,43 @@ Resolved during planning discussion (2026-07-01), extending the single-tenant/cl
 5. **API versioning** — no version prefix. Endpoints stay exactly as documented today (`/jobs`, `/glucose`, etc.). Revisit only if/when third-party integrations requiring backward compatibility guarantees actually materialize (`architecture.md` already lists "Future third-party integrations" as a supported client category, but none exist yet).
 6. **Monitoring backend** — Cloudflare-native only (Analytics, Worker Logs, D1 Metrics), as already recommended in `deployment.md`. No third-party APM (e.g. Sentry) — not mentioned anywhere in the docs and would be new, unjustified scope per "simplicity first."
 
+Resolved during a planning follow-up (2026-07-03), filling in implementation gaps the initial approval left open:
+
+7. **Google token exchange via raw `fetch`, no OAuth library** — two calls (`POST https://oauth2.googleapis.com/token` for the code→token exchange, `GET https://www.googleapis.com/oauth2/v2/userinfo` for the email) using the platform `fetch`. Consistent with the project's dependency discipline: `jose` was added in V2 because rolling JWT *signing* is genuine, security-sensitive crypto; an OAuth2 authorization-code exchange is just two documented HTTP calls with no cryptography of its own, so a library (`@hono/oauth-providers` or similar) would trade a small amount of boilerplate for a new dependency and less control over the `state`/CSRF handling in Decision #8.
+8. **CSRF protection for the OAuth redirect via a signed, storageless `state`** — `GET /auth/google` issues a short-lived (10 minute) JWT as the `state` query param, signed with the existing `JWT_SECRET` via the already-installed `jose`, carrying a random nonce and `purpose: 'oauth_state'` (distinguishing it by claim from a real access token, not by using a different key — the standard way JWTs disambiguate token types). `GET /auth/google/callback` verifies `state` the same way `resolveIdentity` verifies access tokens; failure (missing, invalid, expired, wrong `purpose`) rejects the callback before any Google API call is made. No server-side session/nonce storage needed, consistent with the stateless architecture from V2.
+9. **Google OAuth consent scope is minimal: `openid email`** — no `profile` scope. Decision #1 matches purely on email; requesting name/picture would be unused data collection with a larger consent-screen footprint for no benefit.
+10. **OpenAPI generation via a standalone generator (`@asteasolutions/zod-to-openapi`), not `@hono/zod-openapi`** — the existing ~25 routes across V1+V2 (plain `Hono` + `@hono/zod-validator`, per v1-plan.md Decision #31) are untouched. Each schema already in `src/schemas/` is additionally registered in a new, separate OpenAPI registry (metadata only: summary/description/tags), and a build step assembles `openapi.json` from that registry. `@hono/zod-openapi` was rejected: it requires replacing `Hono` with `OpenAPIHono` and rewriting every route's registration to its `.openapi(routeDef, handler)` form — a full rewrite of a working, tested routing layer, for a benefit (spec/validation always in sync) not worth the blast radius here.
+11. **Google OAuth network calls are tested behind an isolated seam, not skipped** — the code→token and token→profile `fetch` calls live in one function (e.g. `src/services/google-oauth.service.ts`'s `exchangeGoogleCode()`), injected into the route handler rather than called inline, so tests can substitute a fake implementation while every other layer (email lookup in `auth-db`, JWT issuance, the "no match → reject, no user created" invariant) is exercised exactly as V1/V2 test the rest of the app: unit/service tests with real D1 via `@cloudflare/vitest-pool-workers`, no mocking of business logic — only the literal external network boundary is substituted.
+12. **Request ID**: `crypto.randomUUID()` generated once per request in the logging middleware, included in the structured log line, and echoed back to the client via an `X-Request-Id` response header — gives a client-reportable correlation id for support/debugging without adding any new dependency.
+13. **Documentation-first ordering, mirroring V2 Decision #12** — Section 7's `api.md`/`decisions.md`/`deployment.md`/`roadmap.md` updates land as their own commit before any V3 code, for the whole version (not just Section 1). Implementation then starts with Section 2 (OpenAPI) rather than Section 1 (Google Auth), since Section 1 is blocked on the user completing Google Cloud Console setup (registering an OAuth app, obtaining `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, whitelisting both `https://platform-api.nick-burdo.workers.dev/auth/google/callback` and `http://127.0.0.1:8787/auth/google/callback` as authorized redirect URIs on the same OAuth client) — an external, manual prerequisite outside engineering control. Sections 2–5 have no such dependency.
+
 ---
 
 # 1. Google Authentication
 
-Reference: `roadmap.md`, `architecture.md`, `v2-plan.md`
+Reference: `roadmap.md`, `architecture.md`, `v2-plan.md`. **Blocked** on the user completing Google Cloud Console setup (Decision #13) — start here once `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` exist.
 
-- [ ] Register OAuth application in Google Cloud Console, obtain `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-- [ ] Store secrets via `wrangler secret put` (per `deployment.md`); document local dev equivalents in `.dev.vars`
-- [ ] Implement OAuth flow:
-  - [ ] `GET /auth/google` — redirects to Google's consent screen
-  - [ ] `GET /auth/google/callback` — exchanges the code for the Google profile (email), looks up `users` in `auth-db` by email (case-insensitive)
-    - Match found → issue a Platform API JWT identical in shape to a password-login token (same `sub`, `role: "ADMIN"`, `exp`)
-    - No match → reject (e.g. `401` or a redirect to an error state) — **do not create a new user**
-- [ ] Ensure Google-issued tokens are indistinguishable in shape from password-login tokens — the `resolveIdentity` middleware from V2 requires zero changes
-- [ ] Update `api.md`: document the new Google auth endpoints, request/response/redirect behavior, and the "no matching account → rejected" rule
+- [ ] Register OAuth application in Google Cloud Console (user action): consent screen, OAuth client, both redirect URIs whitelisted (Decision #13), scope `openid email` (Decision #9)
+- [ ] Store secrets: `wrangler secret put GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (production); `.dev.vars.example` gains both keys (local dev)
+- [ ] `src/utils/oauth-state.ts` — `issueOAuthState(jwtSecret)` / `verifyOAuthState(token, jwtSecret)`: signed, storageless `state` per Decision #8 (`jose`, 10-minute expiry, random nonce, `purpose: 'oauth_state'` claim); unit tests (issue→verify round-trip, expired, wrong purpose, tampered)
+- [ ] `src/services/google-oauth.service.ts` — `exchangeGoogleCode(code, env)`: raw `fetch` to `oauth2.googleapis.com/token` then `www.googleapis.com/oauth2/v2/userinfo` (Decision #7), returns `{ email }`; isolated as its own function so tests can substitute a fake (Decision #11)
+- [ ] `src/routes/auth.routes.ts` additions:
+  - [ ] `GET /auth/google` — issues `state`, redirects (302) to Google's consent screen with `client_id`, `redirect_uri`, `scope=openid email`, `state`
+  - [ ] `GET /auth/google/callback` — verifies `state` first (reject before calling Google on failure); calls `exchangeGoogleCode()`; looks up `users` in `auth-db` by the returned email (case-insensitive, reusing `findUserByEmail`)
+    - Match found → issue a Platform API JWT identical in shape to a password-login token (same `sub`, `role: 'ADMIN'`, `exp`, via the existing `issueToken()`)
+    - No match → reject (`401`) — **do not create a new user**; verify `auth-db`'s `users` table still has exactly one row afterward
+- [ ] Confirm Google-issued tokens are indistinguishable in shape from password-login tokens — the `resolveIdentity` middleware from V2 requires zero changes
+- [ ] Update `api.md`: document the new Google auth endpoints, request/response/redirect behavior, `state` semantics, and the "no matching account → rejected" rule
 
 ---
 
 # 2. OpenAPI Specification
 
-Reference: `decisions.md` (ADR-011)
+Reference: `decisions.md` (ADR-011), Decision #10 (standalone generator, no route rewrite)
 
-- [ ] Add OpenAPI metadata (summary, description, tags) to the existing Zod schemas from `schemas/` (V1) without changing their validation behavior
+- [ ] Add `@asteasolutions/zod-to-openapi` dependency
+- [ ] `src/openapi/registry.ts` — one `OpenAPIRegistry`, registers each existing schema from `src/schemas/` with OpenAPI metadata (summary, description, tags) via `.openapi(...)` on the schema itself; existing route files (`src/routes/*.ts`) are untouched
+- [ ] `scripts/generate-openapi.ts` — builds `openapi.json` from the registry (`npm run openapi:generate`)
 - [ ] Generate `openapi.json` covering:
   - [ ] Health
   - [ ] Job Tracker (all endpoints + `/jobs/meta`)
@@ -87,8 +101,8 @@ Reference: `decisions.md` (ADR-011)
 
 Reference: `deployment.md`, Decision #6
 
-- [ ] Structure Worker logs consistently (method, path, status, duration, request ID), extending the V1 logging middleware
-- [ ] Add a request ID (UUID per request) propagated through logs for traceability
+- [ ] Structure Worker logs consistently (method, path, status, duration, request ID), extending the V1 `src/middleware/logging.ts`
+- [ ] Add a request ID per Decision #12: `crypto.randomUUID()` generated once per request, included in the log line, echoed back via an `X-Request-Id` response header
 - [ ] Confirm Cloudflare Analytics is enabled for the Worker in the dashboard
 - [ ] Confirm D1 metrics are visible for all three databases (`job-tracker-db`, `health-monitor-db`, `auth-db`)
 - [ ] Document, in `deployment.md`, how to access these dashboards operationally

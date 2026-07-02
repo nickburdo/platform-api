@@ -164,13 +164,14 @@ or interactively (any platform — prompts for the value, still nothing echoed t
 wrangler secret put JWT_SECRET
 ```
 
-Future secrets (Version 3):
+Version 3 adds two more, obtained from a Google Cloud Console OAuth client (see Google Authentication below):
 
-```text
-GOOGLE_CLIENT_ID
-
-GOOGLE_CLIENT_SECRET
+```bash
+wrangler secret put GOOGLE_CLIENT_ID
+wrangler secret put GOOGLE_CLIENT_SECRET
 ```
+
+Local dev equivalents go in `.dev.vars` alongside `JWT_SECRET`.
 
 ---
 
@@ -183,6 +184,21 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=a-strong-password npx tsx scripts/cre
 ```
 
 Re-running it with a new password rotates the existing admin's credentials — it upserts the single row rather than creating a second admin (v2-plan.md Decision #8). See `development.md` for details.
+
+---
+
+# Google Authentication Setup (Version 3)
+
+Google Sign-In is an additional login method for the same single admin account — it never creates a new one (ADR-013). One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
+
+1. Create (or reuse) a project, configure the OAuth consent screen.
+2. Create an OAuth 2.0 Client ID (type: Web application).
+3. Add both authorized redirect URIs to the **same** client:
+   - `https://platform-api.nick-burdo.workers.dev/auth/google/callback` (production)
+   - `http://127.0.0.1:8787/auth/google/callback` (local dev via `wrangler dev --remote`)
+4. Copy the generated Client ID / Client Secret into `wrangler secret put` (above) and `.dev.vars`.
+
+Requested scope is `openid email` only — the admin's Google account must use the same email already stored in `auth-db` (set via `scripts/create-admin.ts`); anything else is rejected with `401`, and no account is created.
 
 ---
 
@@ -271,7 +287,7 @@ Verify:
 
 # Authentication Verification
 
-Version 2.
+## Version 2
 
 Verify:
 
@@ -280,6 +296,15 @@ Verify:
 - `GET /auth/me` — valid token → 200; missing/invalid/expired token → `401`
 - a malformed/invalid token on a business endpoint (e.g. `GET /jobs`) → `401`, never a silent guest fallback
 - demo data isolation: guest and admin never see each other's records in list/meta, and cross-scope by-id access → `404`
+
+## Version 3 — Google Sign-In
+
+Verify:
+
+- `GET /auth/google` → `302` redirect to Google's consent screen, with a `state` query parameter
+- completing consent with the Google account matching the admin's stored email → redirected to the callback → token issued, identical shape to a password-issued token
+- completing consent with a **non-matching** Google account → `401`; confirm `auth-db`'s `users` table still has exactly one row afterward
+- `GET /auth/google/callback` called directly with a missing/invalid/expired `state` → `401`, without ever calling Google
 
 ---
 
@@ -339,18 +364,20 @@ Deleting production data should be avoided.
 
 # Monitoring
 
-Recommended monitoring:
+Cloudflare-native tooling only (`v3-plan.md` Decision #6) — no third-party APM.
 
-- Cloudflare Analytics
-- Worker Logs
-- D1 Metrics
+- **Cloudflare Analytics** — Cloudflare Dashboard → Workers & Pages → `platform-api` → Metrics. Request count, error rate, CPU time, response status breakdown.
+- **Worker Logs** — same Worker page → Logs (`wrangler tail` for a live stream during local verification). Every request logs one structured line (method, path, status, duration, `X-Request-Id` — Version 3) via `src/middleware/logging.ts`.
+- **D1 Metrics** — Cloudflare Dashboard → D1 → each of the three databases (`job-tracker-db`, `health-monitor-db`, `auth-db`) → Metrics. Query count, rows read/written, errors, storage size.
 
 Monitor:
 
 - request count;
 - error rate;
 - response time;
-- database errors.
+- database errors, per database (all three, not just the two from V1).
+
+A logged `X-Request-Id` lets a client-reported issue be matched to its exact server-side log line without guessing by timestamp.
 
 ---
 
