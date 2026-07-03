@@ -68,4 +68,11 @@ describe('exchangeGoogleCode', () => {
       .mockResolvedValueOnce(jsonResponse({ email: 'admin@example.com', verified_email: false }));
     await expect(exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).rejects.toThrow();
   });
+
+  it('throws when the userinfo response has no email at all', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
+      .mockResolvedValueOnce(jsonResponse({ verified_email: true }));
+    await expect(exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).rejects.toThrow();
+  });
 });

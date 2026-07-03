@@ -2868,8 +2868,18 @@
               }
             }
           },
+          "400": {
+            "description": "Validation error — malformed body, unknown key, or empty PATCH body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "state missing/invalid/expired/not issued by this server, or the Google account's email does not match the existing admin (no account is ever created)",
+            "description": "state missing/invalid/expired/not issued by this server, the Google account's email does not match the existing admin, or Google reports the email as unverified (no account is ever created in any case)",
             "content": {
               "application/json": {
                 "schema": {

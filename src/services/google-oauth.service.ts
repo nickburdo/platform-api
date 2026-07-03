@@ -45,7 +45,8 @@ export async function exchangeGoogleCode(
     }),
   });
   if (!tokenResponse.ok) {
-    throw new Error(`Google token exchange failed: ${tokenResponse.status}`);
+    const body = await tokenResponse.text().catch(() => '');
+    throw new Error(`Google token exchange failed: ${tokenResponse.status} ${body}`);
   }
   const { access_token: accessToken } = (await tokenResponse.json()) as GoogleTokenResponse;
 
@@ -53,7 +54,8 @@ export async function exchangeGoogleCode(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!userInfoResponse.ok) {
-    throw new Error(`Google userinfo fetch failed: ${userInfoResponse.status}`);
+    const body = await userInfoResponse.text().catch(() => '');
+    throw new Error(`Google userinfo fetch failed: ${userInfoResponse.status} ${body}`);
   }
   const userInfo = (await userInfoResponse.json()) as GoogleUserInfoResponse;
   if (!userInfo.email || userInfo.verified_email === false) {

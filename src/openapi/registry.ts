@@ -690,8 +690,9 @@ registry.registerPath({
   request: { query: googleCallbackQueryRequestSchema },
   responses: {
     200: okResponse(loginResultSchema, "Email matched the existing admin — behaves like POST /auth/login"),
+    400: VALIDATION_ERROR,
     401: errorResponse(
-      "state missing/invalid/expired/not issued by this server, or the Google account's email does not match the existing admin (no account is ever created)",
+      "state missing/invalid/expired/not issued by this server, the Google account's email does not match the existing admin, or Google reports the email as unverified (no account is ever created in any case)",
     ),
     500: INTERNAL_ERROR,
   },

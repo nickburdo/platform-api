@@ -939,11 +939,7 @@ Location: https://accounts.google.com/o/oauth2/v2/auth?...&state=<signed-state>
 
 ## GET /auth/google/callback
 
-Google redirects here after the user consents, with `code` and `state` query parameters.
-
-* `state` missing, invalid, expired, or not issued by this server → `401`, before any call to Google is made.
-* `state` valid, but the Google account's email doesn't match the existing admin's email (case-insensitive) → `401`. **No account is ever created.**
-* `state` valid and the email matches → behaves exactly like a successful `POST /auth/login`:
+Google redirects here after the user consents, with `code` and `state` query parameters. On success, behaves exactly like a successful `POST /auth/login`:
 
 ### Response
 
@@ -963,6 +959,28 @@ Google redirects here after the user consents, with `code` and `state` query par
 ```
 
 The issued token is identical in shape (claims, expiry) to one issued by `POST /auth/login` — callers cannot tell which method was used to obtain it.
+
+### Errors
+
+`state` missing, invalid, expired, or not issued by this server → `401`, before any call to Google is made:
+
+```json
+{
+  "error": {
+    "message": "Invalid or expired state"
+  }
+}
+```
+
+`state` valid, but the Google account's email doesn't match the existing admin's email (case-insensitive), Google reports the email as unverified, or the token/userinfo exchange with Google itself fails → `401`. **No account is ever created** in any of these cases:
+
+```json
+{
+  "error": {
+    "message": "Invalid credentials"
+  }
+}
+```
 
 ---
 

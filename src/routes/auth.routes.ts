@@ -84,7 +84,13 @@ export async function resolveGoogleCallback(
   let email: string;
   try {
     ({ email } = await deps.exchange(params.code, deps.env, deps.redirectUri));
-  } catch {
+  } catch (err) {
+    // Logged here (rather than left to bubble to the global handleError)
+    // because it's deliberately caught and mapped to a generic 401 instead
+    // of a 500 — without this, a misconfigured secret, a redirect_uri
+    // mismatch, or a Google-side outage would be silently indistinguishable
+    // from a user just picking the wrong Google account.
+    console.error('GET /auth/google/callback: exchangeGoogleCode failed', err);
     return { ok: false, reason: 'invalid_credentials' };
   }
 

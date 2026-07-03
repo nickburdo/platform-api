@@ -12,7 +12,16 @@ function secretKey(secret: string): Uint8Array {
 }
 
 export async function issueOAuthState(secret: string): Promise<string> {
-  return new SignJWT({ purpose: STATE_PURPOSE, nonce: crypto.randomUUID() })
+  return new SignJWT({
+    purpose: STATE_PURPOSE,
+    // Not verified by verifyOAuthState below — Decision #8's storageless
+    // design has nothing to check it against (no server-side nonce
+    // tracking), so it provides no replay protection by itself. CSRF
+    // protection comes entirely from the signature + short expiry +
+    // `purpose` claim. Kept only so two states issued within the same
+    // second (same `iat`) aren't byte-identical tokens.
+    nonce: crypto.randomUUID(),
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(STATE_TTL)
