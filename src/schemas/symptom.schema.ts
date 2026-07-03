@@ -6,10 +6,10 @@ import { atLeastOneFieldRule, reasonRequiredWhenIgnoredRule } from './common.sch
 // Body schemas are `.strict()` — unknown keys are a 400 (Decision #32).
 export const createSymptomSchema = z
   .object({
-    happenedAt: z.string().datetime(),
-    type: z.string().min(1, 'type is required'),
+    happenedAt: z.string('happenedAt is required').datetime(),
+    type: z.string('type is required').min(1, 'type is required'),
     intensity: z
-      .number()
+      .number('intensity must be a whole number between 1 and 10')
       .int('intensity must be a whole number between 1 and 10')
       .min(1, 'intensity must be a whole number between 1 and 10')
       .max(10, 'intensity must be a whole number between 1 and 10'),
@@ -19,10 +19,10 @@ export const createSymptomSchema = z
 
 export const updateSymptomSchema = z
   .object({
-    happenedAt: z.string().datetime(),
-    type: z.string().min(1, 'type is required'),
+    happenedAt: z.string('happenedAt is required').datetime(),
+    type: z.string('type is required').min(1, 'type is required'),
     intensity: z
-      .number()
+      .number('intensity must be a whole number between 1 and 10')
       .int('intensity must be a whole number between 1 and 10')
       .min(1, 'intensity must be a whole number between 1 and 10')
       .max(10, 'intensity must be a whole number between 1 and 10'),

@@ -677,7 +677,7 @@ Updates, ignores or restores a glucose measurement.
 
 ### Errors
 
-Neither or both of `fastingValue`/`afterMealValue` provided returns `400` (`POST`/`PATCH`):
+Both `fastingValue`/`afterMealValue` provided returns `400` on `POST`/`PATCH`; neither provided returns `400` on `POST` only — a `PATCH` may omit both (e.g. to update just `note`, or to ignore/restore a record):
 
 ```json
 {

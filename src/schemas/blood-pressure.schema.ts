@@ -14,22 +14,31 @@ const systolicOverDiastolicRule = {
   },
 };
 
+// Shared between create/update (mirrors glucose.schema.ts's glucoseValueShape)
+// — each field's message is on both the base type call and `.int()`/
+// `.positive()` so it fires whether the key is missing entirely (an
+// `invalid_type` issue on the base call) or present-but-invalid (a
+// `too_small`/`invalid_type` issue on the chained checks).
+const bloodPressureValueShape = {
+  systolic: z
+    .number('systolic must be a positive whole number')
+    .int('systolic must be a positive whole number')
+    .positive('systolic must be a positive whole number'),
+  diastolic: z
+    .number('diastolic must be a positive whole number')
+    .int('diastolic must be a positive whole number')
+    .positive('diastolic must be a positive whole number'),
+  pulse: z
+    .number('pulse must be a positive whole number')
+    .int('pulse must be a positive whole number')
+    .positive('pulse must be a positive whole number'),
+};
+
 // Body schemas are `.strict()` — unknown keys are a 400 (Decision #32).
 export const createBloodPressureSchema = z
   .object({
-    measuredAt: z.string().datetime(),
-    systolic: z
-      .number()
-      .int('systolic must be a positive whole number')
-      .positive('systolic must be a positive whole number'),
-    diastolic: z
-      .number()
-      .int('diastolic must be a positive whole number')
-      .positive('diastolic must be a positive whole number'),
-    pulse: z
-      .number()
-      .int('pulse must be a positive whole number')
-      .positive('pulse must be a positive whole number'),
+    measuredAt: z.string('measuredAt is required').datetime(),
+    ...bloodPressureValueShape,
     note: z.string().optional(),
   })
   .strict()
@@ -37,19 +46,8 @@ export const createBloodPressureSchema = z
 
 export const updateBloodPressureSchema = z
   .object({
-    measuredAt: z.string().datetime(),
-    systolic: z
-      .number()
-      .int('systolic must be a positive whole number')
-      .positive('systolic must be a positive whole number'),
-    diastolic: z
-      .number()
-      .int('diastolic must be a positive whole number')
-      .positive('diastolic must be a positive whole number'),
-    pulse: z
-      .number()
-      .int('pulse must be a positive whole number')
-      .positive('pulse must be a positive whole number'),
+    measuredAt: z.string('measuredAt is required').datetime(),
+    ...bloodPressureValueShape,
     note: z.string().optional(),
     ignored: z.boolean().optional(),
     reason: z.string().optional(),

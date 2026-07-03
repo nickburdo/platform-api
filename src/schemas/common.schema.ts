@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const idParamSchema = z.object({
-  id: z.string().min(1, 'id is required'),
+  id: z.string('id is required').min(1, 'id is required'),
 });
 
 // The regex only checks digit-grouping shape; the refine below rejects

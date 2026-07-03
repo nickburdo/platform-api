@@ -6,16 +6,16 @@ import { atLeastOneFieldRule, reasonRequiredWhenIgnoredRule } from './common.sch
 // Body schemas are `.strict()` — unknown keys are a 400 (Decision #32).
 export const createWeightSchema = z
   .object({
-    measuredAt: z.string().datetime(),
-    value: z.number().positive('value must be greater than 0'),
+    measuredAt: z.string('measuredAt is required').datetime(),
+    value: z.number('value must be greater than 0').positive('value must be greater than 0'),
     note: z.string().optional(),
   })
   .strict();
 
 export const updateWeightSchema = z
   .object({
-    measuredAt: z.string().datetime(),
-    value: z.number().positive('value must be greater than 0'),
+    measuredAt: z.string('measuredAt is required').datetime(),
+    value: z.number('value must be greater than 0').positive('value must be greater than 0'),
     note: z.string().optional(),
     ignored: z.boolean().optional(),
     reason: z.string().optional(),

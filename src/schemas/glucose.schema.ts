@@ -23,7 +23,7 @@ const exactlyOneGlucoseValueRule = {
 // Body schemas are `.strict()` — unknown keys are a 400 (Decision #32).
 export const createGlucoseSchema = z
   .object({
-    measuredAt: z.string().datetime(),
+    measuredAt: z.string('measuredAt is required').datetime(),
     ...glucoseValueShape,
     note: z.string().optional(),
   })
@@ -32,7 +32,7 @@ export const createGlucoseSchema = z
 
 export const updateGlucoseSchema = z
   .object({
-    measuredAt: z.string().datetime(),
+    measuredAt: z.string('measuredAt is required').datetime(),
     ...glucoseValueShape,
     note: z.string().optional(),
     ignored: z.boolean().optional(),

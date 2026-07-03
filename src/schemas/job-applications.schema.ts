@@ -9,14 +9,14 @@ import { atLeastOneFieldRule, paginationQuerySchema } from './common.schema';
 // update that omits it (e.g. a PATCH touching only `notes` would reset
 // `status`/`currency` back to SAVED/USD).
 const jobApplicationShape = {
-  company: z.string().min(1, 'company is required'),
-  position: z.string().min(1, 'position is required'),
+  company: z.string('company is required').min(1, 'company is required'),
+  position: z.string('position is required').min(1, 'position is required'),
   vacancyUrl: z.string().url().optional(),
   status: z.enum(JOB_APPLICATION_STATUSES),
   source: z.string().optional(),
   salaryMin: z.number().int('salaryMin must be a whole number').optional(),
   salaryMax: z.number().int('salaryMax must be a whole number').optional(),
-  currency: z.string().min(1, 'currency is required'),
+  currency: z.string('currency is required').min(1, 'currency is required'),
   location: z.string().optional(),
   remoteType: z.enum(REMOTE_TYPES).optional(),
   notes: z.string().optional(),
@@ -55,7 +55,7 @@ export const createJobApplicationSchema = z
   .object(jobApplicationShape)
   .extend({
     status: z.enum(JOB_APPLICATION_STATUSES).default('SAVED'),
-    currency: z.string().min(1, 'currency is required').default('USD'),
+    currency: z.string('currency is required').min(1, 'currency is required').default('USD'),
   })
   .strict()
   .refine(salaryRangeRule.check, salaryRangeRule.options)
