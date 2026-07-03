@@ -7,8 +7,12 @@ import { atLeastOneFieldRule, reasonRequiredWhenIgnoredRule } from './common.sch
 export const createSymptomSchema = z
   .object({
     happenedAt: z.string().datetime(),
-    type: z.string().min(1),
-    intensity: z.number().int().min(1).max(10),
+    type: z.string().min(1, 'type is required'),
+    intensity: z
+      .number()
+      .int('intensity must be a whole number between 1 and 10')
+      .min(1, 'intensity must be a whole number between 1 and 10')
+      .max(10, 'intensity must be a whole number between 1 and 10'),
     note: z.string().optional(),
   })
   .strict();
@@ -16,8 +20,12 @@ export const createSymptomSchema = z
 export const updateSymptomSchema = z
   .object({
     happenedAt: z.string().datetime(),
-    type: z.string().min(1),
-    intensity: z.number().int().min(1).max(10),
+    type: z.string().min(1, 'type is required'),
+    intensity: z
+      .number()
+      .int('intensity must be a whole number between 1 and 10')
+      .min(1, 'intensity must be a whole number between 1 and 10')
+      .max(10, 'intensity must be a whole number between 1 and 10'),
     note: z.string().optional(),
     ignored: z.boolean().optional(),
     reason: z.string().optional(),

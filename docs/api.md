@@ -178,7 +178,15 @@ Identity resolution on every request:
 
 * **no `Authorization` header** — the request proceeds as a **guest**, scoped to demo data. All V1 endpoints keep working without a token.
 * **`Authorization: Bearer <token>` with a valid, unexpired token** — the request proceeds as the **admin**, scoped to real data.
-* **header present but invalid, malformed or expired** — `401 Unauthorized` on any endpoint. A stale token is never silently downgraded to guest.
+* **header present but invalid, malformed or expired** — `401 Unauthorized` on any endpoint. A stale token is never silently downgraded to guest:
+
+```json
+{
+  "error": {
+    "message": "Invalid or expired token"
+  }
+}
+```
 
 Tokens are JWTs (HS256) issued by `POST /auth/login`, valid for 30 days. Payload: `sub` (user id), `role`, `iat`, `exp`. There is no refresh token and no server-side logout — the client discards the token.
 
@@ -461,6 +469,35 @@ DELETE /jobs/job_1
 
 ---
 
+### Errors
+
+A malformed body — here, `salaryMin` greater than `salaryMax` — returns `400` (`POST`/`PATCH`):
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "salaryMin": ["salaryMin must be less than or equal to salaryMax"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` on any Job Application endpoint (see Authentication).
+
+An unknown or out-of-scope job application ID returns `404` (`GET`/`PATCH`/`DELETE /jobs/:id`):
+
+```json
+{
+  "error": {
+    "message": "Resource not found"
+  }
+}
+```
+
+---
+
 # Job Metadata Resource
 
 ## GET /jobs/meta
@@ -638,6 +675,35 @@ Updates, ignores or restores a glucose measurement.
 
 ---
 
+### Errors
+
+Neither or both of `fastingValue`/`afterMealValue` provided returns `400` (`POST`/`PATCH`):
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "fastingValue": ["Exactly one of fastingValue or afterMealValue must be provided"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` on any Glucose endpoint (see Authentication).
+
+An unknown or out-of-scope glucose measurement ID returns `404` (`PATCH /glucose/:id`):
+
+```json
+{
+  "error": {
+    "message": "Resource not found"
+  }
+}
+```
+
+---
+
 # Blood Pressure Resource
 
 ## GET /blood-pressure
@@ -691,6 +757,35 @@ Updates, ignores or restores a blood pressure measurement.
 
 ---
 
+### Errors
+
+`systolic` not greater than `diastolic` returns `400` (`POST`/`PATCH`):
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "systolic": ["systolic must be greater than diastolic"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` on any Blood Pressure endpoint (see Authentication).
+
+An unknown or out-of-scope blood pressure measurement ID returns `404` (`PATCH /blood-pressure/:id`):
+
+```json
+{
+  "error": {
+    "message": "Resource not found"
+  }
+}
+```
+
+---
+
 # Weight Resource
 
 ## GET /weight
@@ -737,6 +832,35 @@ Updates, ignores or restores a weight measurement.
 {
   "ignored": true,
   "reason": "Measurement duplicated"
+}
+```
+
+---
+
+### Errors
+
+A non-positive `value` returns `400` (`POST`/`PATCH`):
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "value": ["value must be greater than 0"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` on any Weight endpoint (see Authentication).
+
+An unknown or out-of-scope weight measurement ID returns `404` (`PATCH /weight/:id`):
+
+```json
+{
+  "error": {
+    "message": "Resource not found"
+  }
 }
 ```
 
@@ -794,6 +918,35 @@ Updates, ignores or restores a symptom entry.
 
 ---
 
+### Errors
+
+An `intensity` outside `1`–`10` returns `400` (`POST`/`PATCH`):
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "intensity": ["intensity must be a whole number between 1 and 10"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` on any Symptoms endpoint (see Authentication).
+
+An unknown or out-of-scope symptom entry ID returns `404` (`PATCH /symptoms/:id`):
+
+```json
+{
+  "error": {
+    "message": "Resource not found"
+  }
+}
+```
+
+---
+
 # Dashboard Resource
 
 ## GET /dashboard
@@ -823,6 +976,25 @@ Returns aggregated Health Monitor data.
   }
 }
 ```
+
+---
+
+### Errors
+
+`date_from` after `date_to` returns `400`:
+
+```json
+{
+  "error": {
+    "message": "Validation error",
+    "details": {
+      "date_from": ["date_from must be less than or equal to date_to"]
+    }
+  }
+}
+```
+
+An invalid or expired token returns `401` (see Authentication). There is no `404` case — `/dashboard` is not a by-id resource.
 
 ---
 

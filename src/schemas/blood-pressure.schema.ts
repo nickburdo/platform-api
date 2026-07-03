@@ -18,9 +18,18 @@ const systolicOverDiastolicRule = {
 export const createBloodPressureSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    systolic: z.number().int().positive(),
-    diastolic: z.number().int().positive(),
-    pulse: z.number().int().positive(),
+    systolic: z
+      .number()
+      .int('systolic must be a positive whole number')
+      .positive('systolic must be a positive whole number'),
+    diastolic: z
+      .number()
+      .int('diastolic must be a positive whole number')
+      .positive('diastolic must be a positive whole number'),
+    pulse: z
+      .number()
+      .int('pulse must be a positive whole number')
+      .positive('pulse must be a positive whole number'),
     note: z.string().optional(),
   })
   .strict()
@@ -29,9 +38,18 @@ export const createBloodPressureSchema = z
 export const updateBloodPressureSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    systolic: z.number().int().positive(),
-    diastolic: z.number().int().positive(),
-    pulse: z.number().int().positive(),
+    systolic: z
+      .number()
+      .int('systolic must be a positive whole number')
+      .positive('systolic must be a positive whole number'),
+    diastolic: z
+      .number()
+      .int('diastolic must be a positive whole number')
+      .positive('diastolic must be a positive whole number'),
+    pulse: z
+      .number()
+      .int('pulse must be a positive whole number')
+      .positive('pulse must be a positive whole number'),
     note: z.string().optional(),
     ignored: z.boolean().optional(),
     reason: z.string().optional(),

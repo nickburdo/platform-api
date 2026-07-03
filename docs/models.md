@@ -82,6 +82,14 @@ Rules:
 
 ---
 
+## Free-text Note Field: Known Naming Inconsistency
+
+`JobApplication` has `notes` (plural); every Health Monitor entity (`GlucoseMeasurement`, `BloodPressureMeasurement`, `WeightMeasurement`, `SymptomEntry`) has `note` (singular) — both are the same kind of optional free-text field, named differently.
+
+This was surfaced during V3 Section 4's response-shape review and deliberately left as-is: renaming either field is a breaking change to an already-deployed, already-documented contract (a DB column rename plus a client-facing field rename), which is out of scope for a developer-experience pass. Revisit only alongside an actual API version bump, not as a standalone fix.
+
+---
+
 # Health Monitor
 
 Health Monitor stores medical measurements.

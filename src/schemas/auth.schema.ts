@@ -7,7 +7,7 @@ import { z } from 'zod';
 export const loginSchema = z
   .object({
     email: z.string().email(),
-    password: z.string().min(1),
+    password: z.string().min(1, 'password is required'),
   })
   .strict();
 
@@ -16,6 +16,6 @@ export const loginSchema = z
 // we don't care about, and unknown query params are ignored project-wide
 // (api.md), unlike unknown body keys.
 export const googleCallbackQuerySchema = z.object({
-  code: z.string().min(1),
-  state: z.string().min(1),
+  code: z.string().min(1, 'code is required'),
+  state: z.string().min(1, 'state is required'),
 });

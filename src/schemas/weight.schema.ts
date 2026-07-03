@@ -7,7 +7,7 @@ import { atLeastOneFieldRule, reasonRequiredWhenIgnoredRule } from './common.sch
 export const createWeightSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    value: z.number().positive(),
+    value: z.number().positive('value must be greater than 0'),
     note: z.string().optional(),
   })
   .strict();
@@ -15,7 +15,7 @@ export const createWeightSchema = z
 export const updateWeightSchema = z
   .object({
     measuredAt: z.string().datetime(),
-    value: z.number().positive(),
+    value: z.number().positive('value must be greater than 0'),
     note: z.string().optional(),
     ignored: z.boolean().optional(),
     reason: z.string().optional(),

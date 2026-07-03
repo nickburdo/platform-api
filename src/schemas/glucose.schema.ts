@@ -5,8 +5,8 @@ import { atLeastOneFieldRule, reasonRequiredWhenIgnoredRule } from './common.sch
 // there's no glucose-specific query parameter beyond date_from/date_to.
 
 const glucoseValueShape = {
-  fastingValue: z.number().positive().optional(),
-  afterMealValue: z.number().positive().optional(),
+  fastingValue: z.number().positive('fastingValue must be greater than 0').optional(),
+  afterMealValue: z.number().positive('afterMealValue must be greater than 0').optional(),
 };
 
 // Exactly one of fastingValue/afterMealValue must be present — never both,

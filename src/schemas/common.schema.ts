@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const idParamSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1, 'id is required'),
 });
 
 // The regex only checks digit-grouping shape; the refine below rejects
@@ -28,8 +28,17 @@ export const dateRangeQuerySchema = z
   });
 
 export const paginationQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: z.coerce
+    .number('page must be a number')
+    .int('page must be a whole number')
+    .min(1, 'page must be at least 1')
+    .default(1),
+  limit: z.coerce
+    .number('limit must be a number')
+    .int('limit must be a whole number')
+    .min(1, 'limit must be between 1 and 100')
+    .max(100, 'limit must be between 1 and 100')
+    .default(20),
 });
 
 // Shared by every Health Monitor update schema: `reason` must be a non-empty
