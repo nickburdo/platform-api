@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { requestLogContext } from './logging';
 import { errorBody } from '../utils/responses';
 
 // `app.onError` handler (Decision #34). Three tiers:
@@ -17,14 +18,7 @@ export function handleError(err: Error, c: Context): Response {
   if (err instanceof SyntaxError) {
     return c.json(errorBody('Invalid JSON body'), 400);
   }
-  console.error(
-    JSON.stringify({
-      requestId: c.get('requestId'),
-      method: c.req.method,
-      path: c.req.path,
-    }),
-    err
-  );
+  console.error(JSON.stringify(requestLogContext(c)), err);
   return c.json(errorBody('Internal server error'), 500);
 }
 
