@@ -496,7 +496,7 @@ OpenAPI Generated from Documentation
 
 ### Status
 
-Planned
+Accepted
 
 ---
 

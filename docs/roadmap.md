@@ -334,9 +334,9 @@ Improve developer experience and authentication options, without changing the si
 
 Tasks:
 
-- [ ] Configure Google OAuth (Google Cloud Console app, scope `openid email` only)
-- [ ] Login with Google, matched against the single admin's existing email — **no new account is ever created** (ADR-013)
-- [ ] Issue Platform API JWT after Google authentication, identical in shape to a password-issued token
+- [x] Configure Google OAuth (Google Cloud Console app, scope `openid email` only)
+- [x] Login with Google, matched against the single admin's existing email — **no new account is ever created** (ADR-013)
+- [x] Issue Platform API JWT after Google authentication, identical in shape to a password-issued token
 
 Google authentication is an additional login method for the one existing admin account, not a second way to create accounts.
 
@@ -348,9 +348,11 @@ JWT remains the only authentication mechanism used by the API.
 
 Tasks:
 
-- [ ] Generate OpenAPI specification from the project's existing Zod schemas (standalone registry, not a route rewrite — see `plans/v3-plan.md` Decision #10)
-- [ ] Keep documentation synchronized
-- [ ] Validate specification (lint-clean)
+- [x] Generate OpenAPI specification from the project's existing Zod schemas (standalone registry, not a route rewrite — see `plans/v3-plan.md` Decision #10)
+- [x] Keep documentation synchronized
+- [x] Validate specification (lint-clean)
+
+No version prefix on endpoints (`/jobs`, `/glucose`, etc. stay as documented) — see `plans/v3-plan.md` Decision #5; revisit only if third-party integrations requiring backward-compatibility guarantees materialize.
 
 ---
 
@@ -358,9 +360,9 @@ Tasks:
 
 Tasks:
 
-- [ ] Install Swagger UI
-- [ ] Serve at `/docs`, no authentication required to view
-- [ ] Group endpoints by resource
+- [x] Install Swagger UI
+- [x] Serve at `/docs`, no authentication required to view
+- [x] Group endpoints by resource
 
 ---
 
@@ -368,9 +370,9 @@ Tasks:
 
 Tasks:
 
-- [ ] Improve error messages
-- [ ] Improve validation errors
-- [ ] Improve API examples
+- [x] Improve error messages
+- [x] Improve validation errors
+- [x] Improve API examples
 
 ---
 
@@ -378,9 +380,9 @@ Tasks:
 
 Tasks:
 
-- [ ] Request logging (structured, with a per-request `X-Request-Id`)
-- [ ] Error logging
-- [ ] Performance monitoring
+- [x] Request logging (structured, with a per-request `X-Request-Id`)
+- [x] Error logging
+- [x] Performance monitoring (Cloudflare Analytics, confirmed in dashboard)
 
 Cloudflare-native tooling only (Analytics, Worker Logs, D1 Metrics) — no third-party APM.
 
@@ -390,11 +392,11 @@ Cloudflare-native tooling only (Analytics, Worker Logs, D1 Metrics) — no third
 
 Version 3 is complete when:
 
-- [ ] Google Login works for the existing admin account, and only for that account
-- [ ] Swagger UI is available at `/docs`
-- [ ] OpenAPI specification is generated from Zod schemas and lint-clean
-- [ ] Documentation is synchronized
-- [ ] Production monitoring is configured across all three databases
+- [x] Google Login works for the existing admin account, and only for that account
+- [x] Swagger UI is available at `/docs`
+- [x] OpenAPI specification is generated from Zod schemas and lint-clean
+- [x] Documentation is synchronized
+- [x] Production monitoring is configured across all three databases
 
 ---
 
