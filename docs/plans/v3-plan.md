@@ -41,6 +41,16 @@ Resolved during a planning follow-up (2026-07-03), filling in implementation gap
 12. **Request ID**: `crypto.randomUUID()` generated once per request in the logging middleware, included in the structured log line, and echoed back to the client via an `X-Request-Id` response header — gives a client-reportable correlation id for support/debugging without adding any new dependency.
 13. **Documentation-first ordering, mirroring V2 Decision #12** — Section 7's `api.md`/`decisions.md`/`deployment.md`/`roadmap.md` updates land as their own commit before any V3 code, for the whole version (not just Section 1). Implementation then starts with Section 2 (OpenAPI) rather than Section 1 (Google Auth), since Section 1 is blocked on the user completing Google Cloud Console setup (registering an OAuth app, obtaining `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, whitelisting both `https://platform-api.nick-burdo.workers.dev/auth/google/callback` and `http://127.0.0.1:8787/auth/google/callback` as authorized redirect URIs on the same OAuth client) — an external, manual prerequisite outside engineering control. Sections 2–5 have no such dependency.
 
+Resolved during Section 2 implementation kickoff (2026-07-03), filling in library-level details the plan text left implicit:
+
+14. **Schema metadata via `.openapi()`, not Zod v4's native `.meta()`** — `@asteasolutions/zod-to-openapi` v8+ (required for Zod v4 support; v7.3.4 is the last Zod-v3-only release) supports both. `.openapi()` requires one call to `extendZodWithOpenApi(z)`, which mutates Zod's global prototype — but that call lives only inside `src/openapi/registry.ts` / `scripts/generate-openapi.ts`, a standalone generation script never imported by the running Worker, so it has no runtime effect on the deployed app, existing routes, or existing tests. Matches the plan's original wording and the library's own primary documentation path.
+15. **OpenAPI target version: 3.0.x, via `OpenApiGeneratorV3`** — broadest, most mature support in `@hono/swagger-ui` (Section 3) and `@redocly/cli` (Section 2's spec-lint step), both of which have long-standing 3.0.x support. 3.1.x was considered (tighter JSON Schema alignment) but rejected as unnecessary risk for a first OpenAPI rollout; revisit only if 3.0.x's JSON Schema subset proves limiting in practice.
+16. **Generated `openapi.json` lives at `src/openapi/openapi.json`**, not `docs/openapi.json` — Cloudflare Workers have no runtime filesystem access, so whatever Section 3's `/docs` route serves must be bundled in at build time. Colocating it with `registry.ts` under `src/` lets Section 3 `import` it directly as a JSON module with no cross-folder import or extra copy step; `api.md` under `docs/` remains the authoritative human-readable reference regardless of where the generated artifact lives.
+
+Resolved during code review follow-up (2026-07-03), fixing a gap the initial Section 2 implementation left open:
+
+17. **`extendZodWithOpenApi(z)` moved to its own module (`src/openapi/extend-zod.ts`), imported first in `registry.ts`** — confirmed empirically that Zod v4 does not retroactively grant `.openapi()` to schema instances already constructed before the patch runs; only schemas created afterward pick it up. Since ES modules evaluate imports in declaration order, calling `extendZodWithOpenApi(z)` inside `registry.ts`'s own body (after its `src/schemas/*.ts` imports had already evaluated) meant those imported schemas never actually got `.openapi()` — silently defeating Decision #14's original intent to wrap them. Importing the dedicated `extend-zod.ts` module first guarantees the patch is in place before any schema file evaluates.
+
 ---
 
 # 1. Google Authentication
@@ -63,19 +73,27 @@ Reference: `roadmap.md`, `architecture.md`, `v2-plan.md`. **Blocked** on the use
 
 # 2. OpenAPI Specification
 
-Reference: `decisions.md` (ADR-011), Decision #10 (standalone generator, no route rewrite)
+Reference: `decisions.md` (ADR-011), Decision #10 (standalone generator, no route rewrite), Decisions #14–16 (library/version/output-path details resolved at implementation kickoff)
 
-- [ ] Add `@asteasolutions/zod-to-openapi` dependency
-- [ ] `src/openapi/registry.ts` — one `OpenAPIRegistry`, registers each existing schema from `src/schemas/` with OpenAPI metadata (summary, description, tags) via `.openapi(...)` on the schema itself; existing route files (`src/routes/*.ts`) are untouched
-- [ ] `scripts/generate-openapi.ts` — builds `openapi.json` from the registry (`npm run openapi:generate`)
-- [ ] Generate `openapi.json` covering:
-  - [ ] Health
-  - [ ] Job Tracker (all endpoints + `/jobs/meta`)
-  - [ ] Health Monitor (all 4 resources + dashboard)
-  - [ ] Auth (login, me, Google flow)
-- [ ] Include documented error responses (`400`, `401`, `404`, `500`) with the project's actual error envelope shape — no `403` anywhere, per V2's single-role model
-- [ ] Add a spec-lint validation step (e.g. `@redocly/cli` or similar) so the generated spec is checked for internal consistency
-- [ ] Cross-check the generated spec against `api.md`; `api.md` remains the human-authored source of truth until ADR-011 is promoted from "Planned" to "Accepted"
+- [x] Add `@asteasolutions/zod-to-openapi` — pin to the current v8+ line (Zod v4 support; Decision #14), **not** the `^7.x` range (v7.3.4 is the last Zod-v3-only release)
+- [x] `src/openapi/registry.ts`:
+  - [x] Call `extendZodWithOpenApi(z)` once at the top of this file (Decision #14) — scoped to this module only, never imported by the running Worker, so no runtime effect on the deployed app
+  - [x] Instantiate one `OpenAPIRegistry`
+  - [x] Register a shared `bearerAuth` security-scheme component (`type: http`, `scheme: bearer`, `bearerFormat: JWT`)
+  - [x] Register reusable component schemas by wrapping the existing exports from `src/schemas/*.ts` with `.openapi('Name', {...})` — schema files themselves are not edited (matches Decision #10's "additionally registered in a new, separate registry"): error envelope shape, pagination meta, and each resource's create/update/response shapes
+  - [x] `registry.registerPath()` — one call per existing endpoint (method, path, request params/query/body, tags, summary, responses including the actual error envelope for `400`/`401`/`404`/`500`, no `403` anywhere per V2's single-role model):
+    - [x] Health: `GET /health`
+    - [x] Job Tracker: `GET /jobs`, `GET /jobs/meta`, `GET /jobs/:id`, `POST /jobs`, `PATCH /jobs/:id`, `DELETE /jobs/:id`
+    - [x] Health Monitor — Glucose: `GET /glucose`, `POST /glucose`, `PATCH /glucose/:id`
+    - [x] Health Monitor — Blood Pressure: `GET /blood-pressure`, `POST /blood-pressure`, `PATCH /blood-pressure/:id`
+    - [x] Health Monitor — Weight: `GET /weight`, `POST /weight`, `PATCH /weight/:id`
+    - [x] Health Monitor — Symptoms: `GET /symptoms`, `POST /symptoms`, `PATCH /symptoms/:id`
+    - [x] Health Monitor — Dashboard: `GET /dashboard`
+    - [x] Auth: `POST /auth/login`, `GET /auth/me`, `GET /auth/google` (302 redirect, per `api.md`), `GET /auth/google/callback` (documented ahead of Section 1's code, per the doc-first pass — Decision #13)
+- [x] `scripts/generate-openapi.ts` — imports the registry, builds the document via `OpenApiGeneratorV3` targeting OpenAPI 3.0.x (Decision #15), writes it to `src/openapi/openapi.json` (Decision #16 — colocated so Section 3 can `import` it directly into the Worker bundle; Workers have no runtime filesystem access)
+- [x] `package.json`: add `openapi:generate` script running the generator via `tsx`
+- [x] Add a spec-lint validation step (e.g. `@redocly/cli`, 3.0.x-compatible) so the generated spec is checked for internal consistency; wire it into `npm run openapi:generate` or a separate `openapi:lint` script
+- [x] Cross-check the generated `src/openapi/openapi.json` against `api.md` by hand; `api.md` remains the human-authored source of truth until ADR-011 is promoted from "Planned" to "Accepted"
 
 ---
 
