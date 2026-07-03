@@ -51,6 +51,11 @@ Resolved during code review follow-up (2026-07-03), fixing a gap the initial Sec
 
 17. **`extendZodWithOpenApi(z)` moved to its own module (`src/openapi/extend-zod.ts`), imported first in `registry.ts`** — confirmed empirically that Zod v4 does not retroactively grant `.openapi()` to schema instances already constructed before the patch runs; only schemas created afterward pick it up. Since ES modules evaluate imports in declaration order, calling `extendZodWithOpenApi(z)` inside `registry.ts`'s own body (after its `src/schemas/*.ts` imports had already evaluated) meant those imported schemas never actually got `.openapi()` — silently defeating Decision #14's original intent to wrap them. Importing the dedicated `extend-zod.ts` module first guarantees the patch is in place before any schema file evaluates.
 
+Resolved during Section 3 code review follow-up (2026-07-03), formalizing a design choice the initial implementation checked off without a corresponding Decision:
+
+18. **The generated spec is served at its own public route, `GET /openapi.json`, rather than embedded directly into `/docs` via `swaggerUI({ spec: ... })`** — `@hono/swagger-ui` supports both: `{ url }` has the browser fetch the spec from a separate endpoint; `{ spec }` inlines the document into the rendered page with no second route. Chose `{ url }` because a standalone, stably-addressable `/openapi.json` is what external tooling actually expects — codegen (openapi-generator, orval), Postman/Insomnia's "import by URL," contract testing, and any future API gateway all fetch a spec from a URL, not scrape it out of a UI page's embedded JS. This also matches how most public REST APIs publish their spec (independently of whichever UI renders it) and keeps `api.md`'s own framing of the generated spec as a standalone artifact ("the future OpenAPI specification"), not merely fuel for one widget. The tradeoff — one more public, unauthenticated route — is accepted: it exposes no sensitive data (documentation of an already-public API surface, no secrets), so the added discoverability has no real security cost.
+19. **Swagger UI's asset version pinned to `5.32.8`** (`swaggerUI({ version: '5.32.8' })`), rather than left unset — unset floats to whatever `swagger-ui-dist` version jsdelivr currently resolves as "latest," meaning `/docs`'s rendered behavior could silently change on a future page load with no corresponding code change, and would render blank with no server-side signal if the CDN were ever unreachable at exactly the unpinned latest tag. Pinning makes `/docs`'s rendering fully reproducible and deploy-tied, matching how the rest of this feature (the spec itself) is already build-time-deterministic (Decision #16). `GET /openapi.json`'s response is also now pre-serialized once at module scope (`JSON.stringify` at import time, not per request) rather than re-stringified via `c.json()` on every request — the document is immutable for the life of the deployment, so this is free to do and avoids repeated work on a hot-ish path.
+
 ---
 
 # 1. Google Authentication
@@ -99,10 +104,10 @@ Reference: `decisions.md` (ADR-011), Decision #10 (standalone generator, no rout
 
 # 3. Swagger UI
 
-- [ ] Install a Hono-compatible Swagger UI integration (e.g. `@hono/swagger-ui`)
-- [ ] Serve at `/docs` (Decision #4)
-- [ ] Group endpoints by resource (Health, Job Tracker, Health Monitor, Auth), matching the existing doc structure
-- [ ] `/docs` itself requires no authentication to view; "try it out" calls against real endpoints still need a real admin token to hit the real-data scope
+- [x] Install a Hono-compatible Swagger UI integration (e.g. `@hono/swagger-ui`) — `@hono/swagger-ui@^0.6.1`, `hono: >=4.0.0` peer range, compatible with the project's `^4.12.27`
+- [x] Serve at `/docs` (Decision #4) — `src/routes/docs.routes.ts`, mounted at root in `src/app.ts`; raw spec served alongside at its own route, `GET /openapi.json` (Decision #18), sourced from the build-time-generated `src/openapi/openapi.json` (imported directly per Decision #16 — never rebuilt at request time)
+- [x] Group endpoints by resource (Health, Job Tracker, Health Monitor, Auth), matching the existing doc structure — automatic from the `tags` already set per endpoint in `registry.ts`; verified in a live-rendered browser check
+- [x] `/docs` itself requires no authentication to view; "try it out" calls against real endpoints still need a real admin token to hit the real-data scope — verified live: `/docs` renders fully with no `Authorization` header (guest scope in `resolveIdentity`), and the Authorize dialog correctly surfaces the `bearerAuth` scheme for entering a real token
 
 ---
 
