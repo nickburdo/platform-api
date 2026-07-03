@@ -1,9 +1,21 @@
 import { createMiddleware } from 'hono/factory';
 
-// One line per request: method path status durationMs (Decision #35).
-// Bodies and query values are never logged — nothing sensitive leaks.
+// One structured line per request: method, path, status, duration, request ID
+// (Decision #35, extended by V3 Decision #12). Bodies and query values are
+// never logged — nothing sensitive leaks.
 export const requestLogger = createMiddleware(async (c, next) => {
   const start = Date.now();
+  const requestId = crypto.randomUUID();
+  c.set('requestId', requestId);
+  c.header('X-Request-Id', requestId);
   await next();
-  console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${Date.now() - start}ms`);
+  console.log(
+    JSON.stringify({
+      requestId,
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      durationMs: Date.now() - start,
+    })
+  );
 });

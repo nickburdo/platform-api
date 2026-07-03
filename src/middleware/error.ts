@@ -17,7 +17,14 @@ export function handleError(err: Error, c: Context): Response {
   if (err instanceof SyntaxError) {
     return c.json(errorBody('Invalid JSON body'), 400);
   }
-  console.error(`${c.req.method} ${c.req.path}`, err);
+  console.error(
+    JSON.stringify({
+      requestId: c.get('requestId'),
+      method: c.req.method,
+      path: c.req.path,
+    }),
+    err
+  );
   return c.json(errorBody('Internal server error'), 500);
 }
 

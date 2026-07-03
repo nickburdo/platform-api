@@ -31,6 +31,7 @@ export type Variables = {
   healthMonitorDb: HealthMonitorDb;
   authDb: AuthDb;
   identity: Identity;
+  requestId: string;
 };
 
 export type AppEnv = {
