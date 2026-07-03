@@ -57,3 +57,23 @@ export async function getMe(db: AuthDb, userId: string): Promise<PublicUser | un
   const user = await findUserById(db, userId);
   return user ? toPublicUser(user) : undefined;
 }
+
+// Google has already authenticated `email` (v3-plan.md Decision #7/#11) —
+// no password check here. Matches the single admin's existing row by email
+// only (Decision #1); returns null on no match, and the caller must not
+// create a user in that case. No timing defense needed (unlike `login`):
+// there's no password comparison to leak a timing side channel from, and
+// reaching this function at all already requires a signed state token this
+// server issued, not a public, guessable input.
+export async function loginWithGoogle(
+  db: AuthDb,
+  email: string,
+  jwtSecret: string,
+): Promise<LoginResult | null> {
+  const user = await findUserByEmail(db, email.toLowerCase());
+  if (!user) {
+    return null;
+  }
+  const token = await issueToken(user.id, jwtSecret);
+  return { token, user: toPublicUser(user) };
+}

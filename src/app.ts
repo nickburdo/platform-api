@@ -22,6 +22,8 @@ export type Bindings = {
   HEALTH_MONITOR_DB: D1Database;
   AUTH_DB: D1Database;
   JWT_SECRET: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
 };
 
 export type Variables = {

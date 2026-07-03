@@ -3,7 +3,7 @@ import { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { USER_ROLES } from '../db/auth/schema';
 import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema';
-import { loginSchema } from '../schemas/auth.schema';
+import { googleCallbackQuerySchema, loginSchema } from '../schemas/auth.schema';
 import { createBloodPressureSchema, updateBloodPressureSchema } from '../schemas/blood-pressure.schema';
 import { dateRangeQuerySchema, idParamSchema } from '../schemas/common.schema';
 import { createGlucoseSchema, updateGlucoseSchema } from '../schemas/glucose.schema';
@@ -236,17 +236,6 @@ const loginResultSchema = registry.register(
   }),
 );
 
-// Not backed by an existing src/schemas/ export — GET /auth/google/callback
-// isn't implemented yet (Section 1 is blocked on Google Console setup), but
-// Decision #13's doc-first pass already specifies its contract in api.md, so
-// it's documented here ahead of the code, per Section 2's checklist.
-const googleCallbackQuerySchema = z.object({
-  code: z.string().openapi({ description: 'Authorization code issued by Google' }),
-  state: z.string().openapi({
-    description: 'Signed, short-lived state token issued by GET /auth/google (Decision #8)',
-  }),
-});
-
 // ---------------------------------------------------------------------------
 // Request component schemas — wraps each existing src/schemas/*.ts export
 // with .openapi() metadata and registers it (Section 2 checklist / Decision
@@ -270,6 +259,10 @@ const dateRangeQueryRequestSchema = dateRangeQuerySchema.openapi({
 
 const listJobApplicationsQueryRequestSchema = listJobApplicationsQuerySchema.openapi({
   description: 'Pagination and filter parameters for GET /jobs',
+});
+
+const googleCallbackQueryRequestSchema = googleCallbackQuerySchema.openapi({
+  description: 'Forwarded by Google after the user consents',
 });
 
 const loginRequestSchema = registry.register(
@@ -678,15 +671,12 @@ registry.registerPath({
   path: '/auth/google',
   tags: ['Auth'],
   summary: 'Begin Google Sign-In',
-  description:
-    'Not yet implemented (Section 1, blocked on Google Cloud Console setup — Decision #13). Documented ahead of the code per the doc-first pass; contract per api.md.',
   security: [],
   responses: {
     302: {
       description:
         "Redirects to Google's consent screen (scope openid email) with a signed, short-lived state param (Decision #8)",
     },
-    404: errorResponse('Not yet implemented — this route does not exist until Section 1 ships'),
     500: INTERNAL_ERROR,
   },
 });
@@ -696,16 +686,13 @@ registry.registerPath({
   path: '/auth/google/callback',
   tags: ['Auth'],
   summary: 'Complete Google Sign-In',
-  description:
-    'Not yet implemented (Section 1, blocked on Google Cloud Console setup — Decision #13). Documented ahead of the code per the doc-first pass; contract per api.md.',
   security: [],
-  request: { query: googleCallbackQuerySchema },
+  request: { query: googleCallbackQueryRequestSchema },
   responses: {
     200: okResponse(loginResultSchema, "Email matched the existing admin — behaves like POST /auth/login"),
     401: errorResponse(
       "state missing/invalid/expired/not issued by this server, or the Google account's email does not match the existing admin (no account is ever created)",
     ),
-    404: errorResponse('Not yet implemented — this route does not exist until Section 1 ships'),
     500: INTERNAL_ERROR,
   },
 });

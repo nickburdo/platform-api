@@ -1,8 +1,15 @@
 import { zValidator } from '@hono/zod-validator';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app';
-import { loginSchema } from '../schemas/auth.schema';
-import { getMe, login } from '../services/auth.service';
+import type { AuthDb } from '../db/auth/client';
+import { googleCallbackQuerySchema, loginSchema } from '../schemas/auth.schema';
+import { getMe, login, loginWithGoogle, type LoginResult } from '../services/auth.service';
+import {
+  exchangeGoogleCode,
+  type GoogleOAuthEnv,
+} from '../services/google-oauth.service';
+import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { errorBody } from '../utils/responses';
 import { validationHook } from '../utils/validation';
 
@@ -30,3 +37,79 @@ authRoutes.get('/me', async (c) => {
   }
   return c.json({ data: user });
 });
+
+// Derived from the incoming request rather than a configured base-URL env
+// var — Decision #13 whitelists both the prod and local-dev host as
+// redirect URIs on the same Google OAuth client, so whichever host actually
+// received the request is the one Google must be told to come back to.
+function googleCallbackUrl(c: Context<AppEnv>): string {
+  return `${new URL(c.req.url).origin}/auth/google/callback`;
+}
+
+authRoutes.get('/google', async (c) => {
+  const state = await issueOAuthState(c.env.JWT_SECRET);
+  const params = new URLSearchParams({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    redirect_uri: googleCallbackUrl(c),
+    response_type: 'code',
+    scope: 'openid email',
+    state,
+  });
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`, 302);
+});
+
+export type GoogleCallbackOutcome =
+  | { ok: true; result: LoginResult }
+  | { ok: false; reason: 'invalid_state' | 'invalid_credentials' };
+
+interface GoogleCallbackDeps {
+  authDb: AuthDb;
+  env: GoogleOAuthEnv & { JWT_SECRET: string };
+  redirectUri: string;
+  exchange: typeof exchangeGoogleCode;
+}
+
+// A plain function, not a Hono handler — takes its dependencies explicitly
+// (v3-plan.md Decision #11) so tests can substitute a fake `exchange` while
+// exercising state verification, email lookup, and JWT issuance for real
+// against D1, with no Hono app or Context typing involved.
+export async function resolveGoogleCallback(
+  params: { code: string; state: string },
+  deps: GoogleCallbackDeps,
+): Promise<GoogleCallbackOutcome> {
+  if (!(await verifyOAuthState(params.state, deps.env.JWT_SECRET))) {
+    return { ok: false, reason: 'invalid_state' };
+  }
+
+  let email: string;
+  try {
+    ({ email } = await deps.exchange(params.code, deps.env, deps.redirectUri));
+  } catch {
+    return { ok: false, reason: 'invalid_credentials' };
+  }
+
+  const result = await loginWithGoogle(deps.authDb, email, deps.env.JWT_SECRET);
+  if (!result) {
+    return { ok: false, reason: 'invalid_credentials' };
+  }
+  return { ok: true, result };
+}
+
+authRoutes.get(
+  '/google/callback',
+  zValidator('query', googleCallbackQuerySchema, validationHook),
+  async (c) => {
+    const outcome = await resolveGoogleCallback(c.req.valid('query'), {
+      authDb: c.var.authDb,
+      env: c.env,
+      redirectUri: googleCallbackUrl(c),
+      exchange: exchangeGoogleCode,
+    });
+    if (!outcome.ok) {
+      const message =
+        outcome.reason === 'invalid_state' ? 'Invalid or expired state' : 'Invalid credentials';
+      return c.json(errorBody(message), 401);
+    }
+    return c.json({ data: outcome.result });
+  },
+);

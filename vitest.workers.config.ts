@@ -14,8 +14,10 @@ export default defineConfig({
           TEST_JOB_TRACKER_MIGRATIONS: jobTrackerMigrations,
           TEST_HEALTH_MONITOR_MIGRATIONS: healthMonitorMigrations,
           TEST_AUTH_MIGRATIONS: authMigrations,
-          // Fixed dummy secret for token tests — never used outside vitest.
+          // Fixed dummy secrets for token/OAuth tests — never used outside vitest.
           JWT_SECRET: 'test-only-jwt-secret',
+          GOOGLE_CLIENT_ID: 'test-only-google-client-id',
+          GOOGLE_CLIENT_SECRET: 'test-only-google-client-secret',
         },
       },
     }),

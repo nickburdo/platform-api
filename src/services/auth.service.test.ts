@@ -4,7 +4,7 @@ import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
 import { hashPassword } from '../utils/password';
 import { verifyToken } from '../utils/jwt';
-import { getMe, login, toPublicUser } from './auth.service';
+import { getMe, login, loginWithGoogle, toPublicUser } from './auth.service';
 
 let db: AuthDb;
 
@@ -65,6 +65,31 @@ describe('login', () => {
   it('returns null for a wrong password', async () => {
     const { email } = await seedAdmin();
     expect(await login(db, { email, password: 'wrong password' }, SECRET)).toBeNull();
+  });
+});
+
+describe('loginWithGoogle', () => {
+  it('issues a token for the matching email, no password involved', async () => {
+    const { email } = await seedAdmin();
+    const result = await loginWithGoogle(db, email, SECRET);
+    expect(result).not.toBeNull();
+    expect(result?.user.email).toBe(email);
+    expect(result?.user).not.toHaveProperty('passwordHash');
+
+    const payload = await verifyToken(result!.token, SECRET);
+    expect(payload).toEqual({ sub: 'admin-1', role: 'ADMIN' });
+  });
+
+  it('normalizes email case before lookup', async () => {
+    await seedAdmin({ email: 'admin@example.com' });
+    expect(await loginWithGoogle(db, 'Admin@Example.com', SECRET)).not.toBeNull();
+  });
+
+  it('returns null for an email with no matching account, and creates no user', async () => {
+    await seedAdmin();
+    expect(await loginWithGoogle(db, 'nobody@example.com', SECRET)).toBeNull();
+    const rows = await db.select().from(users);
+    expect(rows).toHaveLength(1);
   });
 });
 

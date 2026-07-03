@@ -10,3 +10,12 @@ export const loginSchema = z
     password: z.string().min(1),
   })
   .strict();
+
+// GET /auth/google/callback's query params, forwarded by Google. Not
+// `.strict()` — Google may append extra params (e.g. `scope`, `authuser`)
+// we don't care about, and unknown query params are ignored project-wide
+// (api.md), unlike unknown body keys.
+export const googleCallbackQuerySchema = z.object({
+  code: z.string().min(1),
+  state: z.string().min(1),
+});

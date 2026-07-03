@@ -2804,21 +2804,10 @@
           "Auth"
         ],
         "summary": "Begin Google Sign-In",
-        "description": "Not yet implemented (Section 1, blocked on Google Cloud Console setup — Decision #13). Documented ahead of the code per the doc-first pass; contract per api.md.",
         "security": [],
         "responses": {
           "302": {
             "description": "Redirects to Google's consent screen (scope openid email) with a signed, short-lived state param (Decision #8)"
-          },
-          "404": {
-            "description": "Not yet implemented — this route does not exist until Section 1 ships",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
           },
           "500": {
             "description": "Internal server error",
@@ -2839,26 +2828,23 @@
           "Auth"
         ],
         "summary": "Complete Google Sign-In",
-        "description": "Not yet implemented (Section 1, blocked on Google Cloud Console setup — Decision #13). Documented ahead of the code per the doc-first pass; contract per api.md.",
         "security": [],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "Authorization code issued by Google"
+              "minLength": 1
             },
             "required": true,
-            "description": "Authorization code issued by Google",
             "name": "code",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Signed, short-lived state token issued by GET /auth/google (Decision #8)"
+              "minLength": 1
             },
             "required": true,
-            "description": "Signed, short-lived state token issued by GET /auth/google (Decision #8)",
             "name": "state",
             "in": "query"
           }
@@ -2884,16 +2870,6 @@
           },
           "401": {
             "description": "state missing/invalid/expired/not issued by this server, or the Google account's email does not match the existing admin (no account is ever created)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not yet implemented — this route does not exist until Section 1 ships",
             "content": {
               "application/json": {
                 "schema": {
