@@ -1,4 +1,5 @@
-import { and, count, eq, or, sql, type Column } from 'drizzle-orm';
+import { and, count, eq, or, sql, type Column, type SQL } from 'drizzle-orm';
+import { ownerFilter, type OwnerId } from '../../utils/owner';
 import type { JobTrackerDb } from './client';
 import {
   jobApplications,
@@ -15,7 +16,7 @@ export interface ListJobApplicationsParams {
   status?: JobApplicationStatus;
   company?: string;
   search?: string;
-  isDemo?: boolean;
+  ownerId: OwnerId;
 }
 
 export interface ListJobApplicationsResult {
@@ -39,12 +40,11 @@ function buildFilters(params: {
   status?: JobApplicationStatus;
   company?: string;
   search?: string;
-  isDemo?: boolean;
+  ownerId: OwnerId;
 }) {
-  const conditions = [];
+  const conditions: (SQL | undefined)[] = [ownerFilter(jobApplications.userId, params.ownerId)];
   if (params.status) conditions.push(eq(jobApplications.status, params.status));
   if (params.company) conditions.push(eq(jobApplications.company, params.company));
-  if (params.isDemo !== undefined) conditions.push(eq(jobApplications.isDemo, params.isDemo));
   if (params.search) {
     const term = `%${escapeLikeTerm(params.search)}%`;
     conditions.push(
@@ -56,7 +56,7 @@ function buildFilters(params: {
       ),
     );
   }
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return and(...conditions);
 }
 
 export async function listJobApplications(
@@ -74,17 +74,17 @@ export async function listJobApplications(
   return { rows, total: totalRows[0]?.value ?? 0 };
 }
 
-// By-id operations are scoped to the caller's isDemo world (v2-plan.md
-// Decision #11): a record outside the scope behaves as nonexistent.
+// By-id operations are scoped to the caller's owner scope (v4-plan.md
+// Decision 1): a record outside the scope behaves as nonexistent.
 export async function findJobApplicationById(
   db: JobTrackerDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<JobApplication | undefined> {
   const [row] = await db
     .select()
     .from(jobApplications)
-    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)));
+    .where(and(eq(jobApplications.id, id), ownerFilter(jobApplications.userId, ownerId)));
   return row;
 }
 
@@ -101,12 +101,12 @@ export async function updateJobApplication(
   db: JobTrackerDb,
   id: string,
   data: Partial<NewJobApplication>,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<JobApplication | undefined> {
   const [row] = await db
     .update(jobApplications)
     .set(data)
-    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)))
+    .where(and(eq(jobApplications.id, id), ownerFilter(jobApplications.userId, ownerId)))
     .returning();
   return row;
 }
@@ -114,11 +114,11 @@ export async function updateJobApplication(
 export async function deleteJobApplication(
   db: JobTrackerDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<boolean> {
   const result = await db
     .delete(jobApplications)
-    .where(and(eq(jobApplications.id, id), eq(jobApplications.isDemo, isDemo)))
+    .where(and(eq(jobApplications.id, id), ownerFilter(jobApplications.userId, ownerId)))
     .returning({ id: jobApplications.id });
   return result.length > 0;
 }
@@ -130,27 +130,23 @@ export interface JobApplicationsMetaRaw {
 }
 
 export interface GetJobApplicationsMetaParams {
-  isDemo?: boolean;
+  ownerId: OwnerId;
 }
 
 export async function getJobApplicationsMeta(
   db: JobTrackerDb,
-  params: GetJobApplicationsMetaParams = {},
+  params: GetJobApplicationsMetaParams,
 ): Promise<JobApplicationsMetaRaw> {
-  const isDemoFilter =
-    params.isDemo !== undefined ? eq(jobApplications.isDemo, params.isDemo) : undefined;
+  const ownerScope = ownerFilter(jobApplications.userId, params.ownerId);
 
   const [companyRows, statusRows, totalRows] = await Promise.all([
-    db
-      .selectDistinct({ company: jobApplications.company })
-      .from(jobApplications)
-      .where(isDemoFilter),
+    db.selectDistinct({ company: jobApplications.company }).from(jobApplications).where(ownerScope),
     db
       .select({ status: jobApplications.status, value: count() })
       .from(jobApplications)
-      .where(isDemoFilter)
+      .where(ownerScope)
       .groupBy(jobApplications.status),
-    db.select({ value: count() }).from(jobApplications).where(isDemoFilter),
+    db.select({ value: count() }).from(jobApplications).where(ownerScope),
   ]);
 
   const statusCounts: Partial<Record<JobApplicationStatus, number>> = {};
@@ -163,4 +159,12 @@ export async function getJobApplicationsMeta(
     statusCounts,
     total: totalRows[0]?.value ?? 0,
   };
+}
+
+// Used by account deletion (V4): removes only the given user's rows.
+export async function deleteJobApplicationsByUserId(
+  db: JobTrackerDb,
+  userId: string,
+): Promise<void> {
+  await db.delete(jobApplications).where(eq(jobApplications.userId, userId));
 }

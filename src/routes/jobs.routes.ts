@@ -15,7 +15,7 @@ import {
   listJobApplications,
   updateJobApplication,
 } from '../services/job-applications.service';
-import { scopeIsDemo } from '../middleware/auth';
+import { ownerIdOf, requireUser } from '../middleware/auth';
 import { errorBody } from '../utils/responses';
 import { validationHook } from '../utils/validation';
 
@@ -23,7 +23,7 @@ export const jobsRoutes = new Hono<AppEnv>();
 
 // Registered before `/:id` so "meta" never matches as a job application id.
 jobsRoutes.get('/meta', async (c) => {
-  const meta = await getJobApplicationsMeta(c.var.jobTrackerDb, scopeIsDemo(c.var.identity));
+  const meta = await getJobApplicationsMeta(c.var.jobTrackerDb, ownerIdOf(c.var.identity));
   return c.json({ data: meta });
 });
 
@@ -34,7 +34,7 @@ jobsRoutes.get(
     const { rows, meta } = await listJobApplications(
       c.var.jobTrackerDb,
       c.req.valid('query'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     return c.json({ data: rows, meta });
   },
@@ -44,7 +44,7 @@ jobsRoutes.get('/:id', zValidator('param', idParamSchema, validationHook), async
   const row = await findJobApplicationById(
     c.var.jobTrackerDb,
     c.req.valid('param').id,
-    scopeIsDemo(c.var.identity),
+    ownerIdOf(c.var.identity),
   );
   if (!row) {
     return c.json(errorBody('Resource not found'), 404);
@@ -52,20 +52,26 @@ jobsRoutes.get('/:id', zValidator('param', idParamSchema, validationHook), async
   return c.json({ data: row });
 });
 
-jobsRoutes.post('/', zValidator('json', createJobApplicationSchema, validationHook), async (c) => {
-  // The route owns ID generation (Decision #1).
-  const id = crypto.randomUUID();
-  const created = await createJobApplication(
-    c.var.jobTrackerDb,
-    id,
-    c.req.valid('json'),
-    scopeIsDemo(c.var.identity),
-  );
-  return c.json({ data: created }, 201);
-});
+jobsRoutes.post(
+  '/',
+  requireUser,
+  zValidator('json', createJobApplicationSchema, validationHook),
+  async (c) => {
+    // The route owns ID generation (Decision #1).
+    const id = crypto.randomUUID();
+    const created = await createJobApplication(
+      c.var.jobTrackerDb,
+      id,
+      c.req.valid('json'),
+      ownerIdOf(c.var.identity),
+    );
+    return c.json({ data: created }, 201);
+  },
+);
 
 jobsRoutes.patch(
   '/:id',
+  requireUser,
   zValidator('param', idParamSchema, validationHook),
   zValidator('json', updateJobApplicationSchema, validationHook),
   async (c) => {
@@ -73,7 +79,7 @@ jobsRoutes.patch(
       c.var.jobTrackerDb,
       c.req.valid('param').id,
       c.req.valid('json'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     if (!updated) {
       return c.json(errorBody('Resource not found'), 404);
@@ -82,14 +88,19 @@ jobsRoutes.patch(
   },
 );
 
-jobsRoutes.delete('/:id', zValidator('param', idParamSchema, validationHook), async (c) => {
-  const deleted = await deleteJobApplication(
-    c.var.jobTrackerDb,
-    c.req.valid('param').id,
-    scopeIsDemo(c.var.identity),
-  );
-  if (!deleted) {
-    return c.json(errorBody('Resource not found'), 404);
-  }
-  return c.json({ data: { success: true } });
-});
+jobsRoutes.delete(
+  '/:id',
+  requireUser,
+  zValidator('param', idParamSchema, validationHook),
+  async (c) => {
+    const deleted = await deleteJobApplication(
+      c.var.jobTrackerDb,
+      c.req.valid('param').id,
+      ownerIdOf(c.var.identity),
+    );
+    if (!deleted) {
+      return c.json(errorBody('Resource not found'), 404);
+    }
+    return c.json({ data: { success: true } });
+  },
+);

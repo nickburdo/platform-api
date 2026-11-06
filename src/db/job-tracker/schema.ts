@@ -33,12 +33,12 @@ export const jobApplications = sqliteTable(
     nextFollowUpAt: text('next_follow_up_at'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
-    isDemo: integer('is_demo', { mode: 'boolean' }).notNull().default(false),
+    userId: text('user_id'),
   },
   (table) => [
     index('job_applications_status_idx').on(table.status),
     index('job_applications_company_idx').on(table.company),
-    index('job_applications_is_demo_idx').on(table.isDemo),
+    index('job_applications_user_id_idx').on(table.userId),
   ],
 );
 

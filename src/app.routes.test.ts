@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bearer, request, requestJson, type ErrorEnvelope } from './routes/test-helpers';
+import {
+  bearer,
+  request,
+  requestJson,
+  seedUserAndGetToken,
+  type ErrorEnvelope,
+} from './routes/test-helpers';
 
 describe('GET /health', () => {
   it('responds with the ok envelope and touches no database', async () => {
@@ -45,9 +51,11 @@ describe('cross-cutting behavior', () => {
   });
 
   it('maps a malformed JSON body to a 400 in the error envelope', async () => {
+    // Writes need a user: a guest would be rejected with 401 before parsing.
+    const { token } = await seedUserAndGetToken({ username: 'malformed-body' });
     const res = await request('/jobs', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...bearer(token) },
       body: 'this is not json{',
     });
     expect(res.status).toBe(400);
@@ -63,7 +71,8 @@ describe('cross-cutting behavior', () => {
   });
 
   it('never leaks validation internals in the envelope shape', async () => {
-    const res = await requestJson('POST', '/jobs', { position: 'Engineer' });
+    const { token } = await seedUserAndGetToken({ username: 'validation-shape' });
+    const res = await requestJson('POST', '/jobs', { position: 'Engineer' }, bearer(token));
     expect(res.status).toBe(400);
     const body = (await res.json()) as ErrorEnvelope;
     expect(Object.keys(body)).toEqual(['error']);

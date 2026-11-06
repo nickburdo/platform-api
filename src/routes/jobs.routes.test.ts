@@ -1,5 +1,8 @@
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { freshAuthDb } from '../db/auth/test-helpers';
+import { createJobTrackerDb } from '../db/job-tracker/client';
+import { createJobApplication as createJobApplicationRow } from '../db/job-tracker/job-applications.repository';
 import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import {
   bearer,
@@ -16,25 +19,53 @@ beforeEach(async () => {
   await freshAuthDb();
 });
 
-async function createJob(overrides: Record<string, unknown> = {}): Promise<Response> {
-  return requestJson('POST', '/jobs', { company: 'Acme', position: 'Engineer', ...overrides });
+// Demo rows are seeded directly: guests cannot write (V4), so the API has no
+// way to create them.
+async function seedDemoJob(id: string, company = 'DemoCo'): Promise<void> {
+  await createJobApplicationRow(createJobTrackerDb(env.JOB_TRACKER_DB), {
+    id,
+    company,
+    position: 'Engineer',
+    userId: null,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+  });
+}
+
+async function createJob(
+  token: string,
+  overrides: Record<string, unknown> = {},
+): Promise<Response> {
+  return requestJson(
+    'POST',
+    '/jobs',
+    { company: 'Acme', position: 'Engineer', ...overrides },
+    bearer(token),
+  );
+}
+
+async function createdId(res: Response): Promise<string> {
+  return ((await res.json()) as DataEnvelope).data.id as string;
 }
 
 describe('POST /jobs', () => {
   it('creates a job application, stamping id and server-managed fields', async () => {
-    const res = await createJob();
+    const { token } = await seedUserAndGetToken();
+    const res = await createJob(token);
     expect(res.status).toBe(201);
     const { data } = (await res.json()) as DataEnvelope;
     expect(typeof data.id).toBe('string');
     expect((data.id as string).length).toBe(36);
-    expect(data.isDemo).toBe(true);
     expect(data.status).toBe('SAVED');
     expect(data.currency).toBe('USD');
     expect(data.createdAt).toBe(data.updatedAt);
+    expect(data).not.toHaveProperty('userId');
+    expect(data).not.toHaveProperty('isDemo');
   });
 
-  it('rejects server-managed fields in the body with 400 (Decision #32)', async () => {
-    const res = await createJob({ isDemo: false });
+  it('rejects server-managed fields in the body with 400 (strict schema)', async () => {
+    const { token } = await seedUserAndGetToken();
+    const res = await createJob(token, { userId: 'x' });
     expect(res.status).toBe(400);
     const body = (await res.json()) as ErrorEnvelope;
     expect(body.error.message).toBe('Validation error');
@@ -42,7 +73,8 @@ describe('POST /jobs', () => {
   });
 
   it('rejects an invalid payload with field-level details', async () => {
-    const res = await requestJson('POST', '/jobs', { position: 'Engineer' });
+    const { token } = await seedUserAndGetToken();
+    const res = await requestJson('POST', '/jobs', { position: 'Engineer' }, bearer(token));
     expect(res.status).toBe(400);
     const body = (await res.json()) as ErrorEnvelope;
     expect(body.error.details).toHaveProperty('company');
@@ -51,12 +83,15 @@ describe('POST /jobs', () => {
 
 describe('GET /jobs', () => {
   it('returns the paginated list envelope', async () => {
-    await createJob();
-    const res = await request('/jobs');
+    const { token } = await seedUserAndGetToken();
+    await createJob(token);
+    const res = await request('/jobs', { headers: bearer(token) });
     expect(res.status).toBe(200);
     const body = (await res.json()) as ListEnvelope;
     expect(body.data).toHaveLength(1);
     expect(body.meta).toEqual({ page: 1, limit: 20, total: 1, totalPages: 1 });
+    expect(body.data[0]).not.toHaveProperty('userId');
+    expect(body.data[0]).not.toHaveProperty('isDemo');
   });
 
   it('rejects an out-of-bounds limit with 400', async () => {
@@ -67,8 +102,9 @@ describe('GET /jobs', () => {
 
 describe('GET /jobs/meta', () => {
   it('is routed as metadata, not as a job application id', async () => {
-    await createJob();
-    const res = await request('/jobs/meta');
+    const { token } = await seedUserAndGetToken();
+    await createJob(token);
+    const res = await request('/jobs/meta', { headers: bearer(token) });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as {
       data: { companies: string[]; statuses: string[]; stats: Record<string, number> };
@@ -80,11 +116,13 @@ describe('GET /jobs/meta', () => {
 
 describe('GET /jobs/:id', () => {
   it('returns a single resource', async () => {
-    const created = (await (await createJob()).json()) as DataEnvelope;
-    const res = await request(`/jobs/${created.data.id as string}`);
+    const { token } = await seedUserAndGetToken();
+    const id = await createdId(await createJob(token));
+    const res = await request(`/jobs/${id}`, { headers: bearer(token) });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as DataEnvelope;
-    expect(data.id).toBe(created.data.id);
+    expect(data.id).toBe(id);
+    expect(data).not.toHaveProperty('userId');
   });
 
   it('returns the 404 envelope for an unknown id', async () => {
@@ -96,115 +134,134 @@ describe('GET /jobs/:id', () => {
 
 describe('PATCH /jobs/:id', () => {
   it('applies a partial update and bumps only what changed', async () => {
-    const created = (await (await createJob()).json()) as DataEnvelope;
-    const res = await requestJson('PATCH', `/jobs/${created.data.id as string}`, {
-      status: 'APPLIED',
-    });
+    const { token } = await seedUserAndGetToken();
+    const id = await createdId(await createJob(token));
+    const res = await requestJson('PATCH', `/jobs/${id}`, { status: 'APPLIED' }, bearer(token));
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as DataEnvelope;
     expect(data.status).toBe('APPLIED');
     expect(data.company).toBe('Acme');
+    expect(data).not.toHaveProperty('userId');
   });
 
   it('rejects an empty body with 400 (Decision #33)', async () => {
-    const created = (await (await createJob()).json()) as DataEnvelope;
-    const res = await requestJson('PATCH', `/jobs/${created.data.id as string}`, {});
+    const { token } = await seedUserAndGetToken();
+    const id = await createdId(await createJob(token));
+    const res = await requestJson('PATCH', `/jobs/${id}`, {}, bearer(token));
     expect(res.status).toBe(400);
   });
 
   it('returns 404 for an unknown id', async () => {
-    const res = await requestJson('PATCH', '/jobs/no-such-id', { status: 'APPLIED' });
+    const { token } = await seedUserAndGetToken();
+    const res = await requestJson(
+      'PATCH',
+      '/jobs/no-such-id',
+      { status: 'APPLIED' },
+      bearer(token),
+    );
     expect(res.status).toBe(404);
   });
 });
 
 describe('DELETE /jobs/:id', () => {
   it('deletes physically and reports success; a repeat delete is 404', async () => {
-    const created = (await (await createJob()).json()) as DataEnvelope;
-    const id = created.data.id as string;
+    const { token } = await seedUserAndGetToken();
+    const id = await createdId(await createJob(token));
 
-    const res = await request(`/jobs/${id}`, { method: 'DELETE' });
+    const res = await request(`/jobs/${id}`, { method: 'DELETE', headers: bearer(token) });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: { success: true } });
 
-    const repeat = await request(`/jobs/${id}`, { method: 'DELETE' });
+    const repeat = await request(`/jobs/${id}`, { method: 'DELETE', headers: bearer(token) });
     expect(repeat.status).toBe(404);
   });
 });
 
-describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
-  it('an admin token creates and reads real (isDemo: false) data', async () => {
+describe('guest access (V4 spec 7.2)', () => {
+  it('GET /jobs returns only demo rows', async () => {
+    await seedDemoJob('demo-1');
     const { token } = await seedUserAndGetToken();
-    const created = await requestJson(
-      'POST',
-      '/jobs',
-      { company: 'Acme', position: 'Engineer' },
-      bearer(token),
-    );
-    expect(created.status).toBe(201);
-    const { data } = (await created.json()) as DataEnvelope;
-    expect(data.isDemo).toBe(false);
+    await createJob(token, { company: 'UserCo' });
 
-    const list = await request('/jobs', { headers: bearer(token) });
-    const listBody = (await list.json()) as ListEnvelope;
-    expect(listBody.data).toHaveLength(1);
-    expect(listBody.data[0]?.isDemo).toBe(false);
+    const list = (await (await request('/jobs')).json()) as ListEnvelope;
+    expect(list.data.map((r) => r.company)).toEqual(['DemoCo']);
+    expect(list.data[0]).not.toHaveProperty('userId');
+    expect(list.data[0]).not.toHaveProperty('isDemo');
+
+    const meta = (await (await request('/jobs/meta')).json()) as { data: { companies: string[] } };
+    expect(meta.data.companies).toEqual(['DemoCo']);
   });
 
-  it('guest and admin worlds never see each others records in list/meta', async () => {
-    await createJob({ company: 'GuestCo' }); // anonymous -> demo
-    const { token } = await seedUserAndGetToken();
-    await requestJson('POST', '/jobs', { company: 'AdminCo', position: 'Engineer' }, bearer(token));
+  it('POST with a valid body is 401 Authentication required', async () => {
+    const res = await requestJson('POST', '/jobs', { company: 'Acme', position: 'Engineer' });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: { message: 'Authentication required' } });
+  });
 
-    const guestList = (await (await request('/jobs')).json()) as ListEnvelope;
-    expect(guestList.data.map((r) => r.company)).toEqual(['GuestCo']);
+  it('POST with an invalid body is 401, not 400 (guard runs before validation)', async () => {
+    const res = await requestJson('POST', '/jobs', {});
+    expect(res.status).toBe(401);
+  });
 
-    const adminList = (await (await request('/jobs', { headers: bearer(token) })).json()) as ListEnvelope;
-    expect(adminList.data.map((r) => r.company)).toEqual(['AdminCo']);
+  it('PATCH and DELETE on a demo id are 401', async () => {
+    await seedDemoJob('demo-1');
+    expect((await requestJson('PATCH', '/jobs/demo-1', { status: 'APPLIED' })).status).toBe(401);
+    expect((await requestJson('PATCH', '/jobs/demo-1', {})).status).toBe(401);
+    expect((await request('/jobs/demo-1', { method: 'DELETE' })).status).toBe(401);
+  });
+});
 
-    const guestMeta = (await (await request('/jobs/meta')).json()) as {
-      data: { companies: string[] };
+describe('user isolation', () => {
+  it("a user's list contains no demo rows and meta counts only own rows", async () => {
+    await seedDemoJob('demo-1');
+    const { token } = await seedUserAndGetToken({ username: 'alice' });
+    await createJob(token, { company: 'AliceCo' });
+
+    const list = (await (
+      await request('/jobs', { headers: bearer(token) })
+    ).json()) as ListEnvelope;
+    expect(list.data.map((r) => r.company)).toEqual(['AliceCo']);
+
+    const meta = (await (await request('/jobs/meta', { headers: bearer(token) })).json()) as {
+      data: { companies: string[]; stats: { total: number } };
     };
-    expect(guestMeta.data.companies).toEqual(['GuestCo']);
-
-    const adminMeta = (await (
-      await request('/jobs/meta', { headers: bearer(token) })
-    ).json()) as { data: { companies: string[] } };
-    expect(adminMeta.data.companies).toEqual(['AdminCo']);
+    expect(meta.data.companies).toEqual(['AliceCo']);
+    expect(meta.data.stats.total).toBe(1);
   });
 
-  it('a guest cannot read/patch/delete a real record by id (404, not 403)', async () => {
-    const { token } = await seedUserAndGetToken();
-    const created = await requestJson(
-      'POST',
-      '/jobs',
-      { company: 'AdminCo', position: 'Engineer' },
-      bearer(token),
-    );
-    const id = ((await created.json()) as DataEnvelope).data.id as string;
+  it("another user cannot see, read, patch or delete a user's job (404)", async () => {
+    const alice = await seedUserAndGetToken({ username: 'alice' });
+    const bob = await seedUserAndGetToken({ username: 'bob' });
+    const id = await createdId(await createJob(alice.token, { company: 'AliceCo' }));
 
-    expect((await request(`/jobs/${id}`)).status).toBe(404);
+    const bobList = (await (
+      await request('/jobs', { headers: bearer(bob.token) })
+    ).json()) as ListEnvelope;
+    expect(bobList.data).toHaveLength(0);
+
+    expect((await request(`/jobs/${id}`, { headers: bearer(bob.token) })).status).toBe(404);
     expect(
-      (await requestJson('PATCH', `/jobs/${id}`, { status: 'APPLIED' })).status,
+      (await requestJson('PATCH', `/jobs/${id}`, { status: 'APPLIED' }, bearer(bob.token))).status,
     ).toBe(404);
-    expect((await request(`/jobs/${id}`, { method: 'DELETE' })).status).toBe(404);
+    expect(
+      (await request(`/jobs/${id}`, { method: 'DELETE', headers: bearer(bob.token) })).status,
+    ).toBe(404);
+
+    // The owner still sees the untouched record.
+    const own = await request(`/jobs/${id}`, { headers: bearer(alice.token) });
+    expect(((await own.json()) as DataEnvelope).data.status).toBe('SAVED');
   });
 
-  it('the admin cannot read/patch a demo record by id (404, not 403)', async () => {
-    const created = (await (await createJob()).json()) as DataEnvelope;
-    const id = created.data.id as string;
+  it('a user cannot read, patch or delete a demo record by id (404)', async () => {
+    await seedDemoJob('demo-1');
     const { token } = await seedUserAndGetToken();
 
-    expect((await request(`/jobs/${id}`, { headers: bearer(token) })).status).toBe(404);
+    expect((await request('/jobs/demo-1', { headers: bearer(token) })).status).toBe(404);
     expect(
-      (
-        await requestJson(
-          'PATCH',
-          `/jobs/${id}`,
-          { status: 'APPLIED' },
-          bearer(token),
-        )
-      ).status,
+      (await requestJson('PATCH', '/jobs/demo-1', { status: 'APPLIED' }, bearer(token))).status,
+    ).toBe(404);
+    expect(
+      (await request('/jobs/demo-1', { method: 'DELETE', headers: bearer(token) })).status,
     ).toBe(404);
   });
 });

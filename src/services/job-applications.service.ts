@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { omitUserId, type OwnerId } from '../utils/owner';
 import type { JobTrackerDb } from '../db/job-tracker/client';
 import {
   createJobApplication as createJobApplicationRow,
@@ -9,6 +10,8 @@ import {
   updateJobApplication as updateJobApplicationRow,
 } from '../db/job-tracker/job-applications.repository';
 import type { JOB_APPLICATION_STATUSES, JobApplication } from '../db/job-tracker/schema';
+
+export type JobApplicationView = Omit<JobApplication, 'userId'>;
 import type {
   createJobApplicationSchema,
   listJobApplicationsQuerySchema,
@@ -27,55 +30,57 @@ export async function createJobApplication(
   db: JobTrackerDb,
   id: string,
   input: z.infer<typeof createJobApplicationSchema>,
-  isDemo: boolean,
-): Promise<JobApplication> {
+  ownerId: OwnerId,
+): Promise<JobApplicationView> {
   const now = new Date().toISOString();
-  // `isDemo` comes from the caller's identity scope (V2, ADR-012): guests
-  // create demo records, the admin creates real ones. Never client-supplied.
-  return createJobApplicationRow(db, {
+  // `userId` comes from the caller's identity, never from the client body.
+  const row = await createJobApplicationRow(db, {
     id,
     ...input,
-    isDemo,
+    userId: ownerId,
     createdAt: now,
     updatedAt: now,
   });
+  return omitUserId(row);
 }
 
 export async function updateJobApplication(
   db: JobTrackerDb,
   id: string,
   input: z.infer<typeof updateJobApplicationSchema>,
-  isDemo: boolean,
-): Promise<JobApplication | undefined> {
-  return updateJobApplicationRow(
+  ownerId: OwnerId,
+): Promise<JobApplicationView | undefined> {
+  const row = await updateJobApplicationRow(
     db,
     id,
     {
       ...input,
       updatedAt: new Date().toISOString(),
     },
-    isDemo,
+    ownerId,
   );
+  return row && omitUserId(row);
 }
 
 export async function findJobApplicationById(
   db: JobTrackerDb,
   id: string,
-  isDemo: boolean,
-): Promise<JobApplication | undefined> {
-  return findJobApplicationByIdRow(db, id, isDemo);
+  ownerId: OwnerId,
+): Promise<JobApplicationView | undefined> {
+  const row = await findJobApplicationByIdRow(db, id, ownerId);
+  return row && omitUserId(row);
 }
 
 export async function deleteJobApplication(
   db: JobTrackerDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<boolean> {
-  return deleteJobApplicationRow(db, id, isDemo);
+  return deleteJobApplicationRow(db, id, ownerId);
 }
 
 export interface ListJobApplicationsResult {
-  rows: JobApplication[];
+  rows: JobApplicationView[];
   meta: {
     page: number;
     limit: number;
@@ -87,11 +92,11 @@ export interface ListJobApplicationsResult {
 export async function listJobApplications(
   db: JobTrackerDb,
   query: z.infer<typeof listJobApplicationsQuerySchema>,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<ListJobApplicationsResult> {
-  const { rows, total } = await listJobApplicationsRows(db, { ...query, isDemo });
+  const { rows, total } = await listJobApplicationsRows(db, { ...query, ownerId });
   return {
-    rows,
+    rows: rows.map(omitUserId),
     meta: {
       page: query.page,
       limit: query.limit,
@@ -119,9 +124,9 @@ export interface JobApplicationsMeta {
 
 export async function getJobApplicationsMeta(
   db: JobTrackerDb,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<JobApplicationsMeta> {
-  const raw = await getJobApplicationsMetaRow(db, { isDemo });
+  const raw = await getJobApplicationsMetaRow(db, { ownerId });
 
   const interviews = INTERVIEW_STATUSES.reduce(
     (sum, status) => sum + (raw.statusCounts[status] ?? 0),

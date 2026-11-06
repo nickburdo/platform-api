@@ -96,7 +96,7 @@ describe('createJobApplicationSchema', () => {
       createJobApplicationSchema.safeParse({
         company: 'Acme',
         position: 'Engineer',
-        isDemo: false,
+        userId: 'x',
       }).success,
     ).toBe(false);
   });
