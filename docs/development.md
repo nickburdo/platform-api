@@ -76,7 +76,7 @@ which runs `wrangler dev --remote`. The API will be available at:
 http://localhost:8787
 ```
 
-**There is no local database.** The dev server runs against the same two cloud D1 databases as production (`--remote`), so every record you create locally lands in the real cloud data. All API-created data in V1 is demo data (`isDemo: true`) and can always be reset with `npm run db:seed`.
+**There is no local database.** The dev server runs against the same two cloud D1 databases as production (`--remote`), so every record you create locally lands in the real cloud data. Since Version 4, records created through the API belong to the registered user who created them (guests cannot write); only the demo records (`user_id IS NULL`) can be reset with `npm run db:seed`, and accounts you register while developing stay in the real `auth-db` until you delete them (`DELETE /auth/me` removes an account with all of its data).
 
 Note for Windows/PowerShell users: test non-GET requests against the dev server with `curl.exe`, not `Invoke-RestMethod` — the remote-preview proxy consistently answers PowerShell's HTTP client with `503 "worker restarted mid-request"` on POST/PATCH/DELETE.
 
@@ -96,7 +96,15 @@ JWT_SECRET
 - **Local dev:** `.dev.vars` (gitignored); copy the committed `.dev.vars.example` and fill in a value. Note: only the secret is local — `wrangler dev --remote` still targets the real cloud databases.
 - **Tests:** a fixed dummy value is bound via `vitest.workers.config.ts`.
 
-Version 3 will additionally require `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+Version 3 additionally requires `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (see `google-console.md`).
+
+Version 4 adds one **non-secret** setting, committed in `wrangler.jsonc` under `vars`:
+
+```text
+ALLOWED_FRONTEND_ORIGINS
+```
+
+A comma-separated list of frontend origins (scheme + host + port, no path, no trailing slash) that Google Sign-In may redirect back to, e.g. `https://health-monitor-new.pages.dev,https://job-tracker-new.pages.dev`. `http(s)://localhost:<any port>` and `http(s)://127.0.0.1:<any port>` are always allowed in addition. The test pool reads the same `wrangler.jsonc` value. Adding a frontend is a config edit plus a deploy — see `connecting-a-frontend.md`.
 
 ---
 
@@ -294,7 +302,7 @@ The project uses **two independent Cloudflare D1 databases**, accessed through D
 |----------|---------|--------|
 | `job-tracker-db` | `JOB_TRACKER_DB` | `job_applications` |
 | `health-monitor-db` | `HEALTH_MONITOR_DB` | `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries` |
-| `auth-db` (Version 2) | `AUTH_DB` | `users` (a single admin row — see ADR-012) |
+| `auth-db` (Version 2) | `AUTH_DB` | `users` (all accounts — see ADR-014) |
 
 Each database has its own Drizzle config (`drizzle.job-tracker.config.ts`, `drizzle.health-monitor.config.ts`, `drizzle.auth.config.ts`), schema file, client and migration history. The domains never share a query.
 
@@ -340,9 +348,9 @@ Version 1 includes demo seed data as **plain SQL fixture files**, one per databa
 - `src/db/job-tracker/seed.sql` — 17 job applications covering all 9 statuses;
 - `src/db/health-monitor/seed.sql` — 10 rows in each of the four measurement tables.
 
-Every seeded record sets `is_demo = 1`. Row IDs are fixed (stable across re-runs); dates are computed relative to the run time via SQLite date functions, so demo data always looks current.
+Every seeded record is a demo record: `user_id` is `NULL`. Row IDs are fixed (stable across re-runs); dates are computed relative to the run time via SQLite date functions, so demo data always looks current.
 
-Seeding is **idempotent and safe to re-run**: each file first deletes only `is_demo = 1` rows, then re-inserts the fixtures — non-demo data is never touched. This also makes reseeding the standard way to clean up records created during manual testing.
+Seeding is **idempotent and safe to re-run**: each file first deletes only `WHERE user_id IS NULL` rows, then re-inserts the fixtures — user data is never touched. Demo records are changed only through the seed.
 
 Commands:
 
@@ -358,32 +366,27 @@ Seeding always runs against the cloud databases (`wrangler d1 execute <db> --rem
 
 # Demo Data Rules
 
-The client never controls the `isDemo` field.
+The client never controls the owner (`userId`) of a record.
 
-The server assigns it automatically from the caller's identity (Version 2 — see ADR-012):
+The server assigns scope and ownership from the caller's identity (Version 4 — see ADR-014):
 
-- seed data uses `isDemo = true`;
-- guest-created data (no token) uses `isDemo = true`;
-- admin-created data (valid token) uses `isDemo = false`;
-- reads — including by-id — are scoped the same way: records outside the caller's scope return `404`.
+- **demo data** is exactly the rows with `user_id IS NULL`, and only the seed creates or changes them;
+- **guests** (no token) read demo rows only, and cannot write at all — every write route answers `401 Authentication required`, and the check runs before body validation;
+- **users** (valid token of an existing user) read and write only rows where `user_id` equals their own id, and never see demo rows;
+- by-id reads and writes outside the caller's scope return `404`.
+
+In code the scope travels as `ownerId: string | null` (`null` = demo) from the identity middleware through services into repositories; the single helper `ownerFilter(column, ownerId)` is the only place that decides between `IS NULL` and `= userId`.
 
 ---
 
-# Admin Bootstrap (Version 2)
+# Accounts (Version 4)
 
-There is no public registration. The single admin account is created (or its credentials rotated) via a one-time manual script:
+Anyone can register through `POST /auth/register` (username + password, no email) or sign in with Google — there is no bootstrap script and no admin account. Accounts live in `auth-db`; there are no roles.
 
-```bash
-ADMIN_EMAIL=... ADMIN_PASSWORD=... npx tsx scripts/create-admin.ts
-```
+Useful during development:
 
-The script:
-
-- validates password strength (minimum 12 characters — this is the single key to all real data);
-- normalizes the email to lowercase;
-- hashes the password with the same PBKDF2 module the runtime uses (`src/utils/password.ts`);
-- writes the `INSERT`/upsert into `auth-db` via `wrangler d1 execute auth-db --remote` (re-running with a new password updates the existing row, never creates a second admin);
-- never prints or persists the plaintext password.
+- register a throw-away account from `http/auth.http` and delete it with `DELETE /auth/me` when done (this also removes its data);
+- Google Sign-In locally: use `http://localhost:<port>` as the `redirect` (always allowed), e.g. `GET /auth/google?redirect=http://localhost:5173/auth/callback`.
 
 ---
 
@@ -625,6 +628,8 @@ Test files are co-located next to their source. The Workers pool applies each da
 
 Route tests drive the fully wired Hono app — middleware, validation, error handlers — over real D1 bindings, asserting status codes and response envelopes.
 
+Tests that need an authenticated caller use the helper `seedUserAndGetToken({ username?, password? })` from `src/routes/test-helpers.ts`: it inserts a user into the ephemeral `auth-db` and returns `{ userId, token, username, password }`. Cross-user isolation tests seed two users. Demo rows (`user_id IS NULL`) are inserted directly through the repositories.
+
 ## Manual Testing (JetBrains HTTP Client)
 
 Request files live in `http/`, one per resource, with a `client.test(...)` assertion block on every request and `id` chaining from POST responses into follow-up PATCH/DELETE requests:
@@ -632,8 +637,8 @@ Request files live in `http/`, one per resource, with a `client.test(...)` asser
 ```text
 http/
 ├── http-client.env.json               dev (localhost:8787) / prod environments
-├── http-client.private.env.json.example   template for admin credentials (V2)
-├── auth.http                          Login, Me, Register (not implemented)
+├── http-client.private.env.json.example   template for account credentials
+├── auth.http                          Register, Login, Me, Delete account
 ├── health.http
 ├── jobs.http                          List, Details, Create, Update, Delete, Meta
 ├── glucose.http
@@ -652,13 +657,13 @@ Each endpoint is covered for:
 - resource not found;
 - invalid identifier;
 - empty result;
-- demo data behavior.
+- guest (demo, read-only) and signed-in user (own data) behavior.
 
 Health Monitor has no DELETE, so records created by manual runs stay in the cloud database — clean up with `npm run db:seed:health-monitor`.
 
-### Admin credentials (V2)
+### Account credentials
 
-`auth.http`'s Login request and the "Admin" sections in `jobs.http`/`glucose.http` need real admin credentials, which must never be committed. Copy `http-client.private.env.json.example` to `http-client.private.env.json` (gitignored) and fill in `adminEmail`/`adminPassword` for the `prod` environment. Run auth.http's Login request first — it stores `{{token}}` in the client's global variables, reused by every other file's Admin section for the rest of the session.
+`auth.http` registers a throw-away account with a random username and stores `{{token}}` in the client's global variables, reused by every other file's write requests for the rest of the session. To log in to a fixed account instead, copy `http-client.private.env.json.example` to `http-client.private.env.json` (gitignored) and fill in `username`/`password` for the `prod` environment; never commit real credentials.
 
 ---
 
@@ -692,7 +697,7 @@ createdAt
 
 updatedAt
 
-isDemo
+userId
 ```
 
 These values are generated or maintained by the server.
@@ -804,13 +809,11 @@ Authentication
 
 Roles
 
-- [ ] ADMIN
-- [ ] GUEST
+- Superseded by Version 4: there are no roles (ADR-014)
 
 Demo Data
 
-- [ ] Guest users work only with demo data
-- [ ] Admin users work with real data
+- Superseded by Version 4: guests read demo data read-only; every user works only with their own data
 
 ---
 
@@ -829,6 +832,28 @@ Platform
 
 - [ ] Production monitoring
 - [ ] API versioning (if required)
+
+---
+
+# Version 4 Checklist
+
+Authentication
+
+- [ ] Username accounts: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
+- [ ] Google Sign-In by `sub` (scope `openid`), redirect to an allow-listed frontend
+- [ ] Account linking in both directions
+- [ ] Account deletion with all data (`DELETE /auth/me`)
+
+Data
+
+- [ ] `user_id` replaces `is_demo` on all five entities
+- [ ] Guest writes return `401 Authentication required`
+
+Documentation
+
+- [ ] `frontend-guide.md`, `connecting-a-frontend.md`
+
+Detailed task-level history lives in `docs/plans/v4-plan.md`.
 
 ---
 

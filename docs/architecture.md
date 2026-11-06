@@ -107,10 +107,12 @@ New technologies are introduced only when they solve a real problem.
                Hono Router
                      │
                      ▼
-        Identity Resolution (V2)
-        no token → guest (demo scope)
-        valid JWT → admin (real scope)
+        Identity Resolution (V2, V4)
+        no token → guest (demo scope, read-only)
+        valid JWT + user exists → user (own scope)
+        valid JWT, user deleted → 401
         invalid JWT → 401
+        (write routes: guest → 401 before validation)
                      │
          +-----------+-----------+
          |                       |
@@ -126,8 +128,8 @@ New technologies are introduced only when they solve a real problem.
              ▼                  ▼                  ▼
   Cloudflare D1:      Cloudflare D1:      Cloudflare D1:
   job-tracker-db      health-monitor-db   auth-db (V2)
-  (job_applications)  (glucose_…,         (users — the
-                       blood_pressure_…,   single admin row)
+  (job_applications)  (glucose_…,         (users — all
+                       blood_pressure_…,   accounts)
                        weight_…,
                        symptom_entries)
 ```
@@ -143,7 +145,7 @@ Each bounded domain owns its own database. The databases never share a schema, a
 | TypeScript | Primary programming language |
 | Hono | HTTP routing |
 | Cloudflare Workers | Serverless runtime |
-| Cloudflare D1 | Two independent databases: `job-tracker-db`, `health-monitor-db` |
+| Cloudflare D1 | Three independent databases: `job-tracker-db`, `health-monitor-db`, `auth-db` |
 | Drizzle ORM | Database access (one client, schema and migration history per database) |
 | Zod | Validation |
 | Wrangler | Development & deployment |
@@ -188,9 +190,9 @@ The project uses **three independent D1 databases**, one per bounded domain:
 
 - `job-tracker-db` — one table, `job_applications`;
 - `health-monitor-db` — four tables: `glucose_measurements`, `blood_pressure_measurements`, `weight_measurements`, `symptom_entries`;
-- `auth-db` (Version 2) — one table, `users`, holding the single admin row (ADR-012).
+- `auth-db` (Version 2) — one table, `users`, holding all accounts (username, optional password hash, optional Google `sub`; ADR-014).
 
-Each database has its own Drizzle schema, client and migrations directory under `src/db/<domain>/`. The two domains never reference each other's data.
+Each database has its own Drizzle schema, client and migrations directory under `src/db/<domain>/`. The domains never reference each other's data: business rows point at their owner with a plain `user_id` text column (`NULL` = demo record), not a foreign key.
 
 The application communicates with the databases exclusively through Drizzle ORM.
 
@@ -224,13 +226,19 @@ Invalid requests should never reach business logic.
 
 ## Request Flow
 
-Every request follows the same lifecycle.
+Every request follows the same lifecycle. The write guard runs before validation, so a guest sending an invalid body to a write route gets `401`, not `400`. Business logic receives the resolved owner scope (`null` = demo for guests, the user id for users) and passes it to every query.
 
 ```text
 HTTP Request
       │
       ▼
 Hono Route
+      │
+      ▼
+Identity Resolution (guest / user / 401)
+      │
+      ▼
+Write guard — guests get 401 (write routes only)
       │
       ▼
 Zod Validation

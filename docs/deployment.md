@@ -140,9 +140,9 @@ npm run db:seed:job-tracker        # wrangler d1 execute job-tracker-db --remote
 npm run db:seed:health-monitor     # wrangler d1 execute health-monitor-db --remote --file=./src/db/health-monitor/seed.sql
 ```
 
-Seed creates only demo records (`is_demo = 1`) and is idempotent: each file deletes only `is_demo = 1` rows before re-inserting, so non-demo data is never touched. Seeding is always an explicit manual command — it never runs automatically as part of deployment.
+Seed creates only demo records (`user_id IS NULL`) and is idempotent: each file deletes only `WHERE user_id IS NULL` rows before re-inserting, so user data is never touched. Seeding is always an explicit manual command — it never runs automatically as part of deployment.
 
-`auth-db` has no seed file — it holds exactly one row (the admin), provisioned via the bootstrap script (see Admin Bootstrap below), never via demo fixtures.
+`auth-db` has no seed file — accounts are created by users through `POST /auth/register` or Google Sign-In, never via fixtures.
 
 ---
 
@@ -175,30 +175,55 @@ Local dev equivalents go in `.dev.vars` alongside `JWT_SECRET`.
 
 ---
 
-# Admin Bootstrap (Version 2)
+# Google Authentication Setup (Version 3, revised in Version 4)
 
-There is no public registration (ADR-012) — the single admin account is created directly against the cloud `auth-db` via a local script, run from the operator's own terminal so the plaintext password never appears in any shared session or log:
+Google Sign-In creates and finds accounts by Google's stable account id (`sub`) — see ADR-014. Step-by-step Google Cloud Console setup (in Russian) lives in `google-console.md`. In short, one-time setup in [Google Cloud Console](https://console.cloud.google.com/):
 
-```bash
-ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=a-strong-password npx tsx scripts/create-admin.ts
-```
-
-Re-running it with a new password rotates the existing admin's credentials — it upserts the single row rather than creating a second admin (v2-plan.md Decision #8). See `development.md` for details.
-
----
-
-# Google Authentication Setup (Version 3)
-
-Google Sign-In is an additional login method for the same single admin account — it never creates a new one (ADR-013). One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
-
-1. Create (or reuse) a project, configure the OAuth consent screen.
+1. Create (or reuse) a project, configure the OAuth consent screen with the **`openid` scope only** (no `email`), and **publish the app ("In production")** — in Testing mode only manually listed test users could sign in.
 2. Create an OAuth 2.0 Client ID (type: Web application).
 3. Add both authorized redirect URIs to the **same** client:
    - `https://platform-api.nick-burdo.workers.dev/auth/google/callback` (production)
    - `http://127.0.0.1:8787/auth/google/callback` (local dev via `wrangler dev --remote`)
 4. Copy the generated Client ID / Client Secret into `wrangler secret put` (above) and `.dev.vars`.
 
-Requested scope is `openid email` only — the admin's Google account must use the same email already stored in `auth-db` (set via `scripts/create-admin.ts`); anything else is rejected with `401`, and no account is created.
+The frontends that Google may send the user back to are an application setting, not a Google Console one: `ALLOWED_FRONTEND_ORIGINS` in `wrangler.jsonc` (see `connecting-a-frontend.md`).
+
+---
+
+# Version 4 Deployment Procedure
+
+Version 4 changes the schema of all three databases and the Worker code together. Deploy **only on an explicit request**, and run the steps in this order. Production has no real data yet, so a short window in which the old Worker runs against the new schema is accepted.
+
+1. **Google Cloud Console (manual).** Per `google-console.md`: remove the `email` scope from the consent screen and publish the app ("In production"). Confirm Google does not demand a verification review.
+2. **Pre-migration safety check.** The V4 migrations turn every existing business row into a public demo row (`user_id = NULL`), so first confirm there are no real (non-demo) rows. For each of the five tables run, against the cloud database:
+
+   ```bash
+   npx wrangler d1 execute job-tracker-db --remote --command "SELECT COUNT(*) FROM job_applications WHERE is_demo=0"
+   npx wrangler d1 execute health-monitor-db --remote --command "SELECT COUNT(*) FROM glucose_measurements WHERE is_demo=0"
+   npx wrangler d1 execute health-monitor-db --remote --command "SELECT COUNT(*) FROM blood_pressure_measurements WHERE is_demo=0"
+   npx wrangler d1 execute health-monitor-db --remote --command "SELECT COUNT(*) FROM weight_measurements WHERE is_demo=0"
+   npx wrangler d1 execute health-monitor-db --remote --command "SELECT COUNT(*) FROM symptom_entries WHERE is_demo=0"
+   ```
+
+   All five must return `0`. **If any is non-zero, stop** and decide with the owner what to do with those rows.
+3. **Apply migrations**, in this order:
+
+   ```bash
+   npx wrangler d1 migrations apply auth-db --remote
+   npx wrangler d1 migrations apply job-tracker-db --remote
+   npx wrangler d1 migrations apply health-monitor-db --remote
+   ```
+
+   The `auth-db` migration drops and recreates `users` **without copying rows** — the V2 admin account is removed.
+4. **Deploy immediately:** `npx wrangler deploy`.
+5. **Reseed** the demo rows (re-inserted with `user_id = NULL`): `npm run db:seed`.
+6. **Live verification** (curl or the JetBrains HTTP collection against production):
+   - guest `GET /jobs` returns the 17 demo rows; guest `POST /jobs` → `401 Authentication required`;
+   - `POST /auth/register` → `201`; that user's `GET /jobs` is empty; create, patch and delete an own job;
+   - `/docs` and `/openapi.json` → `200`;
+   - `DELETE /auth/me` → `204`, then the old token → `401`.
+7. **Google sign-in (manual).** Open `https://platform-api.nick-burdo.workers.dev/auth/google?redirect=http://localhost:5173/auth/callback` in a browser: it ends on `…#token=…`, and Google's consent screen does not mention email.
+8. Record the deployed Version ID in `plans/v4-plan.md`.
 
 ---
 
@@ -219,7 +244,7 @@ Otherwise Wrangler performs the build automatically.
 Deploy the Worker:
 
 ```bash
-wrangler deploy
+npx wrangler deploy
 ```
 
 A successful deployment should output:
@@ -287,24 +312,26 @@ Verify:
 
 # Authentication Verification
 
-## Version 2
+## Accounts and data scope (Version 4)
 
 Verify:
 
-- `POST /auth/register` → `404` (not implemented, closed registration)
-- `POST /auth/login` — correct credentials → token; wrong password / unknown email → identical `401`
-- `GET /auth/me` — valid token → 200; missing/invalid/expired token → `401`
+- `POST /auth/register` → `201` with token and user; the same username in another case → `409 Username is already taken`
+- `POST /auth/login` — correct credentials → token; wrong password / unknown username / Google-only account → identical `401 Invalid credentials`
+- `GET /auth/me` — valid token → `200`; no token → `401 Authentication required`; invalid/expired token → `401 Invalid or expired token`
 - a malformed/invalid token on a business endpoint (e.g. `GET /jobs`) → `401`, never a silent guest fallback
-- demo data isolation: guest and admin never see each other's records in list/meta, and cross-scope by-id access → `404`
+- guest writes (valid or invalid body) → `401 Authentication required`
+- data isolation: a guest sees only demo rows, a user sees only their own rows, cross-scope by-id access → `404`
+- `DELETE /auth/me` → `204`; the old token afterwards → `401 Invalid or expired token`
 
-## Version 3 — Google Sign-In
+## Google Sign-In (Version 3, revised in Version 4)
 
 Verify:
 
-- `GET /auth/google` → `302` redirect to Google's consent screen, with a `state` query parameter
-- completing consent with the Google account matching the admin's stored email → redirected to the callback → token issued, identical shape to a password-issued token
-- completing consent with a **non-matching** Google account → `401`; confirm `auth-db`'s `users` table still has exactly one row afterward
-- `GET /auth/google/callback` called directly with a missing/invalid/expired `state` → `401`, without ever calling Google
+- `GET /auth/google?redirect=<allowed frontend URL>` → `302` to Google's consent screen with `scope=openid` and a `state` parameter; a missing or non-allowlisted `redirect` → `400`, no redirect
+- completing consent → `302` to `<redirect>#token=…` (a new account is created on the first sign-in; the consent screen does not mention email)
+- cancelling on Google's screen → `302` to `<redirect>#error=access_denied`
+- `GET /auth/google/callback` called directly with a missing/invalid/expired `state` → `401 Invalid or expired state`, without ever calling Google
 
 ---
 
@@ -321,18 +348,21 @@ Database
 - [x] Migrations generated (per database)
 - [x] Migrations applied (`--remote`, per database)
 - [x] Seed executed (job-tracker-db, health-monitor-db — `auth-db` has no seed)
+- [ ] Version 4: non-demo row count verified `0`, migrations applied in order (`auth-db`, `job-tracker-db`, `health-monitor-db`), demo rows reseeded
 
 Secrets
 
 - [x] JWT secret
 - [ ] Google credentials (Version 3)
+- [ ] Google Console: `email` scope removed, app published "In production" (Version 4)
 
 Verification
 
 - [x] Health endpoint
 - [x] Job Tracker
 - [x] Health Monitor
-- [x] Authentication (Version 2) — register/login/me/401-semantics/demo-isolation verified against production
+- [x] Authentication (Version 2) — login/me/401-semantics/demo-isolation verified against production
+- [ ] Authentication (Version 4) — register/login/me/delete-account, guest `401` on writes, per-user isolation verified against production
 
 ---
 

@@ -19,12 +19,15 @@ docs/
 ├── development.md
 ├── deployment.md
 ├── decisions.md
+├── frontend-guide.md
+├── connecting-a-frontend.md
 ├── google-console.md
 ├── summary.md
 ├── plans/
 │   ├── v1-plan.md
 │   ├── v2-plan.md
-│   └── v3-plan.md
+│   ├── v3-plan.md
+│   └── v4-plan.md
 └── seed/
 ```
 
@@ -176,7 +179,7 @@ Read this document to understand why the project is designed the way it is.
 
 ## plans/
 
-One implementation plan per version (`v1-plan.md`, `v2-plan.md`, `v3-plan.md`).
+One implementation plan per version (`v1-plan.md`, `v2-plan.md`, `v3-plan.md`, `v4-plan.md`).
 
 Each plan contains:
 
@@ -186,6 +189,28 @@ Each plan contains:
 * definition of done.
 
 Read the plan of a version to understand how and why it was implemented.
+
+---
+
+## frontend-guide.md
+
+Guide for frontend developers (Version 4).
+
+Includes:
+
+* the guest, user and stale-token states and how to react to each `401`;
+* the registration form warning (no password recovery) and the username-taken case;
+* account deletion confirmation;
+* the Google Sign-In redirect flow and the `#token` / `#error` fragment codes;
+* the optional account-linking flows.
+
+Read this document before building or changing a frontend.
+
+---
+
+## connecting-a-frontend.md
+
+Step-by-step guide to allowing a new frontend: the `ALLOWED_FRONTEND_ORIGINS` allowlist in `wrangler.jsonc`, the origin format, the always-allowed `localhost`, deployment and verification.
 
 ---
 
@@ -203,7 +228,7 @@ Session hand-off summary (in Russian): current project status, what was done in 
 
 ## seed/
 
-Original Prisma schemas and seed fixtures used as the source for the demo data (`isDemo = true`).
+Original Prisma schemas and seed fixtures used as the source for the demo data (records with `user_id IS NULL`).
 
 ---
 
@@ -272,6 +297,8 @@ Each aspect of the project has a single authoritative document.
 | Deployment              | `deployment.md`   |
 | Architectural Decisions | `decisions.md`    |
 | Version Plans           | `plans/`          |
+| Frontend Behaviour      | `frontend-guide.md` |
+| Connecting a Frontend   | `connecting-a-frontend.md` |
 
 Avoid documenting the same information in multiple places.
 

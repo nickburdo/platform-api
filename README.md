@@ -37,7 +37,7 @@ Production: **https://platform-api.nick-burdo.workers.dev**
 | TypeScript | Programming language |
 | Hono | HTTP framework |
 | Cloudflare Workers | Runtime |
-| Cloudflare D1 | Two independent databases (`job-tracker-db`, `health-monitor-db`) |
+| Cloudflare D1 | Three independent databases (`job-tracker-db`, `health-monitor-db`, `auth-db`) |
 | Drizzle ORM | ORM |
 | Zod | Validation |
 | Vitest | Automated tests (incl. real-D1 runs via `@cloudflare/vitest-pool-workers`) |
@@ -68,6 +68,8 @@ The project documentation is organized by responsibility.
 | `docs/api.md` | REST API specification |
 | `docs/development.md` | Development guide |
 | `docs/deployment.md` | Deployment guide |
+| `docs/frontend-guide.md` | Guide for frontend developers: guest prompts, auth errors, Google Sign-In flow |
+| `docs/connecting-a-frontend.md` | How to allow a new frontend (origin allowlist, Google Sign-In) |
 | `docs/decisions.md` | Architectural decisions (ADR) |
 | `docs/plans/` | Per-version implementation plans with decision logs |
 
@@ -123,6 +125,8 @@ docs/
 ├── api.md
 ├── development.md
 ├── deployment.md
+├── frontend-guide.md  UX rules for frontends (guest prompt, auth errors, Google flow)
+├── connecting-a-frontend.md  allowlist: how to connect a new frontend
 ├── decisions.md
 ├── google-console.md  Google Cloud Console setup for Google Sign-In
 ├── summary.md       current status / session hand-off summary
@@ -148,9 +152,9 @@ Version 1
 
 Version 2
 
-- Authentication (single admin account, closed registration)
+- Authentication (single admin account, closed registration; replaced in Version 4)
 - JWT
-- Guest / admin data scoping (`isDemo`)
+- Guest / admin data scoping (replaced in Version 4)
 
 Version 3
 
@@ -159,6 +163,16 @@ Version 3
 - Swagger UI
 - Improved validation errors
 - Monitoring (structured logs, `X-Request-Id`)
+
+Version 4
+
+- Open multi-user accounts: register with a username and password (no email)
+- Google Sign-In by Google account id (scope `openid` only), account created on first sign-in
+- Account linking in both directions (link Google to a password account, set a password on a Google account)
+- Per-user data; guests get read-only demo data (writes return `401`)
+- Account deletion with all of its data (`DELETE /auth/me`)
+- Frontend origin allowlist for the Google redirect
+- Guides: [`docs/frontend-guide.md`](docs/frontend-guide.md) (how a frontend should behave) and [`docs/connecting-a-frontend.md`](docs/connecting-a-frontend.md) (how to connect a new frontend)
 
 See:
 

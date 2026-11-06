@@ -43,24 +43,27 @@ The API never returns Unix timestamps.
 
 ---
 
-## Demo Data
+## Ownership and Demo Data
 
-Every business entity contains the following field:
+Every business entity belongs to a user. In storage each row carries a nullable owner reference:
 
 ```ts
-isDemo: boolean
+userId: string | null
 ```
 
 Purpose:
 
-- separate demonstration data from real user data;
-- allow guest users to work with the application without authentication.
+- keep every user's data private — an authenticated user sees only their own records;
+- keep a set of **demo records** (`userId` is `null`) that guests can browse without an account.
 
 Rules:
 
-- the client never sends `isDemo`;
-- the server assigns its value from the caller's identity: no valid token (guest) → `true`, valid admin token → `false`;
-- the two worlds never overlap: guests read and write only demo records, the admin reads and writes only real records — including by-id operations, where a record outside the caller's scope behaves as nonexistent (`404`).
+- the client never sends `userId`; it is also never returned in API responses;
+- the server derives the scope from the caller's identity: no valid token (guest) → demo records only (`userId IS NULL`), read-only; valid token → records where `userId` equals the caller's id;
+- the worlds never overlap — guests never see user data, users never see demo data or each other's data — including by-id operations, where a record outside the caller's scope behaves as nonexistent (`404`);
+- demo records are created and changed only through the seed.
+
+---
 
 ---
 
@@ -136,7 +139,6 @@ Represents a single blood glucose measurement.
 | note | string | | Optional note |
 | ignored | boolean | ✓ | Ignore flag |
 | reason | string | | Ignore reason |
-| isDemo | boolean | ✓ | Demo data flag |
 
 A measurement is taken either fasting or after a meal — never both at once, never neither.
 
@@ -311,7 +313,6 @@ Represents a single job application.
 | notes | string | | User notes |
 | appliedAt | ISO string | | Application date |
 | nextFollowUpAt | ISO string | | Planned follow-up |
-| isDemo | boolean | ✓ | Demo data flag |
 
 ### Validation Rules
 
@@ -400,19 +401,9 @@ count / total
 
 # Authentication
 
-Authentication is introduced in Version 2.
+Authentication is introduced in Version 2; Version 4 makes it an open multi-user model (ADR-014).
 
-The application is **single-tenant**: exactly one real user (the admin) exists. "Guest" is **not** a stored account or role — it is the absence of a valid `Authorization` token on a request. Guests are scoped to demo data; the admin is scoped to real data (see Demo Data above).
-
----
-
-## UserRole
-
-```ts
-type UserRole = 'ADMIN';
-```
-
-The `role` column exists for schema durability (future multi-role support), but only ever holds `'ADMIN'` in Version 2. `GUEST` is never persisted.
+"Guest" is **not** a stored account or role — it is the absence of a valid `Authorization` token on a request. Guests are scoped to demo data, read-only; a user is scoped to their own data (see Ownership and Demo Data above). There are no roles: all users are equal.
 
 ---
 
@@ -421,9 +412,9 @@ The `role` column exists for schema durability (future multi-role support), but 
 ```ts
 interface User {
     id: string;
-    email: string;
-    passwordHash: string;
-    role: UserRole;
+    username: string;
+    passwordHash?: string;
+    googleSub?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -431,17 +422,20 @@ interface User {
 
 Rules:
 
-- only one row ever exists (the single admin), created via an out-of-band bootstrap script — there is no public registration;
-- `email` is stored lowercase and unique;
-- `passwordHash` (salted PBKDF2, self-describing parameter format) is **never** serialized into any API response;
-- the `User` entity has no `isDemo` field — it lives in its own `auth-db` database, separate from both business domains.
+- `username`: 3–32 characters, `[A-Za-z0-9_-]`; unique **case-insensitively**; stored and displayed as entered;
+- `passwordHash` (salted PBKDF2, self-describing parameter format) is absent for Google-only accounts and is **never** serialized into any API response;
+- `googleSub` is Google's stable account identifier (OpenID `sub`); absent for accounts that never used Google; unique; never serialized into any API response;
+- **invariant:** at least one of `passwordHash` / `googleSub` is present — an account always has a way to sign in;
+- no email is collected or stored; there is no role field;
+- the API exposes a derived `hasPassword: boolean` instead of the hash (see `api.md`);
+- the `User` entity has no `userId`/owner field — it lives in its own `auth-db` database, separate from both business domains.
 
 ---
 
 # Relationships
 
 ```text
-User (Version 2, single admin — implicit ownership, no foreign keys)
+User (auth-db) — owns records by plain-text reference, no foreign keys
         │
         ├───────────────┐
         │               │
@@ -456,7 +450,7 @@ JobApplication    Health Monitor
                  SymptomEntry
 ```
 
-Ownership is implicit: all `isDemo: false` records belong to the single admin. No `userId` column exists on any business entity — the `isDemo` flag is the only data partition, and the three databases (`auth-db`, `job-tracker-db`, `health-monitor-db`) never reference each other.
+Ownership is a plain `userId` text column on each business entity (`NULL` = demo record). It is not a foreign key, because the three databases (`auth-db`, `job-tracker-db`, `health-monitor-db`) never reference each other. Deleting an account therefore removes the user's rows in each business database explicitly (see `api.md`, `DELETE /auth/me`).
 
 ---
 

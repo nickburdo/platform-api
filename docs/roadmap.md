@@ -27,9 +27,14 @@ Version 2
         │
         ▼
 Version 3
+        │
+        ▼
+Version 4
 ```
 
 Each version should remain deployable.
+
+Sections for Versions 1–3 describe those versions **as delivered**. Version 4 replaces their single-tenant model (one admin, `isDemo` partition, admin-only Google login) with open multi-user accounts — see ADR-014.
 
 ---
 
@@ -212,7 +217,7 @@ The primary objective is to separate guest users from authenticated users and pr
 
 ---
 
-> Version 2 was re-scoped during planning (2026-07-01, see `plans/v2-plan.md` and ADR-012): the application is **single-tenant** — one admin account, closed registration, and "guest" means the absence of a valid token rather than a stored role. The task lists below reflect the as-designed version.
+> Version 2 was re-scoped during planning (2026-07-01, see `plans/v2-plan.md` and ADR-012): the application was **single-tenant** — one admin account, closed registration, and "guest" means the absence of a valid token rather than a stored role. The task lists below reflect the version as delivered; the single-tenant model was superseded in Version 4 (ADR-014), while "guest = absence of a token" still holds.
 
 ## Authentication
 
@@ -326,7 +331,7 @@ Version 2 is complete when:
 
 ## Goal
 
-Improve developer experience and authentication options, without changing the single-tenant, closed-registration model from Version 2 (see `plans/v3-plan.md` and ADR-013).
+Improve developer experience and authentication options, without changing the single-tenant, closed-registration model that Version 2 had established (see `plans/v3-plan.md` and ADR-013; both models were superseded in Version 4 by ADR-014).
 
 ---
 
@@ -397,6 +402,48 @@ Version 3 is complete when:
 - [x] OpenAPI specification is generated from Zod schemas and lint-clean
 - [x] Documentation is synchronized
 - [x] Production monitoring is configured across all three databases
+
+---
+
+# Version 4
+
+## Goal
+
+Turn the single-admin API into a small multi-user service: open registration by username (no email anywhere), login by password or Google, per-user data, read-only demo data for guests, and self-service account deletion. See `plans/v4-plan.md`, the design spec `superpowers/specs/2026-11-06-v4-multi-user-auth-design.md` and ADR-014 (supersedes ADR-012 and ADR-013).
+
+---
+
+## Tasks
+
+Mirrors `plans/v4-plan.md`.
+
+- [ ] Docs-first pass: `api.md`, `models.md`, `architecture.md`, `decisions.md` (ADR-014), `roadmap.md`, `development.md`, `deployment.md`, `google-console.md`, `README.md`, new `frontend-guide.md` and `connecting-a-frontend.md`
+- [ ] `auth-db` users rebuilt (username, optional password, optional Google `sub`), tokens without roles, identity with user-existence check, `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
+- [ ] Job Tracker per-user scope (`user_id` replaces `is_demo`, guest writes → `401 Authentication required`)
+- [ ] Health Monitor per-user scope (all four tables and the dashboard)
+- [ ] Account deletion with all data (`DELETE /auth/me`)
+- [ ] Google Sign-In by OpenID `sub` (scope `openid` only), account auto-created, token returned to an allow-listed frontend via the URL fragment
+- [ ] Account linking in both directions (`POST /auth/google/link`, `POST /auth/me/password`)
+- [ ] OpenAPI specification and `.http` collection updated
+- [ ] Deployment (only on explicit request): safety check for non-demo rows, migrations, deploy, reseed, live verification
+- [ ] Close-out docs
+
+---
+
+## Definition of Done
+
+Version 4 is complete when:
+
+- [ ] Guests see demo data read-only; every write returns `401 Authentication required`
+- [ ] Registration by username (no email) returns a token; login works by username/password or Google
+- [ ] Google sign-in uses the `openid` scope only, creates accounts by `sub`, and delivers the token to allow-listed frontends only
+- [ ] Users see and change only their own data; demo data is invisible to them
+- [ ] `DELETE /auth/me` removes the account and all of its data; its old token returns `401`
+- [ ] No `email`, `role` or `isDemo` remains in the API, code or database (outside migration history)
+- [ ] Test suite updated and extended; gate green; OpenAPI lint-clean
+- [ ] `frontend-guide.md` and `connecting-a-frontend.md` are published and linked from `README.md`
+- [ ] Account linking works in both directions
+- [ ] Deployed and live-verified
 
 ---
 

@@ -91,7 +91,7 @@ For validation errors (`400`), `details` is Zod's flattened field-error map: eac
     "message": "Validation error",
     "details": {
       "salaryMin": ["salaryMin must be less than or equal to salaryMax"],
-      "_errors": ["Unrecognized key: \"isDemo\""]
+      "_errors": ["Unrecognized key: \"userId\""]
     }
   }
 }
@@ -120,9 +120,10 @@ Unknown **query parameters**, by contrast, are ignored.
 | 204    | Successful request without response body |
 | 302    | Redirect (Google Sign-In only)           |
 | 400    | Validation error                         |
-| 401    | Unauthorized                             |
+| 401    | Unauthorized (guest on a write endpoint, invalid token, wrong credentials) |
 | 403    | Forbidden                                |
 | 404    | Resource not found                       |
+| 409    | Conflict (username taken, Google already linked, password already set) |
 | 500    | Internal server error                    |
 
 ---
@@ -155,30 +156,28 @@ Example:
 
 ---
 
-## Demo Data
+## Data Ownership and Demo Data
 
-Business entities contain `isDemo`.
+Business entities belong to a user. The ownership column (`userId`) is internal: it is never present in responses, and the client must not send it (strict bodies reject it, see Strict Request Bodies).
 
-The client must not send this field.
+The server derives the scope from the caller's identity (see Authentication):
 
-The server derives it from the caller's identity (see Authentication):
-
-* requests without a token (guests) read and create only demo records (`isDemo: true`);
-* requests with a valid admin token read and create only real records (`isDemo: false`);
-* the two worlds never overlap — a record outside the caller's scope behaves as nonexistent: by-id operations return `404`;
-* seed data is created with `isDemo: true`.
+* requests without a token (**guests**) read only **demo records** — read-only, no write is possible;
+* requests with a valid token (**users**) read and write only **their own records** — demo records are not visible to them;
+* the worlds never overlap — a record outside the caller's scope behaves as nonexistent: by-id operations return `404`, and the existence of other users' records is never disclosed;
+* demo records are changed only through the seed (`seed.sql`).
 
 ---
 
 ## Authentication
 
-Authentication is introduced in Version 2. The application is single-tenant: one admin account, no public registration.
+Authentication is introduced in Version 2. Since Version 4 the API is multi-user: anyone can register an account with a username and password (no email is collected), or sign in with Google. All users are equal — there are no roles.
 
 Identity resolution on every request:
 
-* **no `Authorization` header** — the request proceeds as a **guest**, scoped to demo data. All V1 endpoints keep working without a token.
-* **`Authorization: Bearer <token>` with a valid, unexpired token** — the request proceeds as the **admin**, scoped to real data.
-* **header present but invalid, malformed or expired** — `401 Unauthorized` on any endpoint. A stale token is never silently downgraded to guest:
+* **no `Authorization` header** — the request proceeds as a **guest**, scoped to demo data, **read-only**. Reads work without a token; any write (`POST`, `PATCH`, `DELETE`, ignore/restore) is `401 Authentication required`.
+* **`Authorization: Bearer <token>` with a valid, unexpired token of an existing user** — the request proceeds as that **user**, scoped to the user's own data.
+* **header present but the token is invalid, malformed or expired, or the account it belongs to has been deleted** — `401 Unauthorized` on any endpoint. A stale token is never silently downgraded to guest:
 
 ```json
 {
@@ -188,7 +187,19 @@ Identity resolution on every request:
 }
 ```
 
-Tokens are JWTs (HS256) issued by `POST /auth/login`, valid for 30 days. Payload: `sub` (user id), `role`, `iat`, `exp`. There is no refresh token and no server-side logout — the client discards the token.
+A guest calling a write endpoint (or `GET`/`DELETE /auth/me`, `POST /auth/me/password`, `POST /auth/google/link`) receives:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
+
+The check runs **before request body validation**: a guest sending an invalid body to a write endpoint gets `401`, not `400`. Frontends use this `401` to show a "register to add your own data" prompt (see `frontend-guide.md`).
+
+Tokens are JWTs (HS256) issued by `POST /auth/register`, `POST /auth/login` and the Google callback, valid for 30 days. Payload: `sub` (user id), `iat`, `exp`. Tokens obtained by any method are indistinguishable. On every authenticated request the API checks that the user still exists. There is no refresh token and no server-side logout — the client discards the token.
 
 ```http
 Authorization: Bearer <access_token>
@@ -253,8 +264,7 @@ GET /jobs?page=1&limit=20&status=APPLIED&company=Google&search=frontend
       "appliedAt": "2026-06-29T10:00:00.000Z",
       "nextFollowUpAt": "2026-07-06T10:00:00.000Z",
       "createdAt": "2026-06-29T10:00:00.000Z",
-      "updatedAt": "2026-06-29T10:00:00.000Z",
-      "isDemo": false
+      "updatedAt": "2026-06-29T10:00:00.000Z"
     }
   ],
   "meta": {
@@ -310,8 +320,7 @@ GET /jobs/job_1
     "appliedAt": "2026-06-29T10:00:00.000Z",
     "nextFollowUpAt": "2026-07-06T10:00:00.000Z",
     "createdAt": "2026-06-29T10:00:00.000Z",
-    "updatedAt": "2026-06-29T10:00:00.000Z",
-    "isDemo": false
+    "updatedAt": "2026-06-29T10:00:00.000Z"
   }
 }
 ```
@@ -353,7 +362,7 @@ The client must not send:
 * `id`
 * `createdAt`
 * `updatedAt`
-* `isDemo`
+* `userId`
 
 Sending any of them is rejected with `400` (see Strict Request Bodies).
 
@@ -387,8 +396,7 @@ Status:
     "appliedAt": "2026-06-29T10:00:00.000Z",
     "nextFollowUpAt": "2026-07-06T10:00:00.000Z",
     "createdAt": "2026-06-29T10:00:00.000Z",
-    "updatedAt": "2026-06-29T10:00:00.000Z",
-    "isDemo": false
+    "updatedAt": "2026-06-29T10:00:00.000Z"
   }
 }
 ```
@@ -435,8 +443,7 @@ All fields are optional.
     "appliedAt": "2026-06-29T10:00:00.000Z",
     "nextFollowUpAt": "2026-07-10T10:00:00.000Z",
     "createdAt": "2026-06-29T10:00:00.000Z",
-    "updatedAt": "2026-06-29T12:00:00.000Z",
-    "isDemo": false
+    "updatedAt": "2026-06-29T12:00:00.000Z"
   }
 }
 ```
@@ -485,6 +492,16 @@ A malformed body — here, `salaryMin` greater than `salaryMax` — returns `400
 ```
 
 An invalid or expired token returns `401` on any Job Application endpoint (see Authentication).
+
+A guest (no token) calling a write endpoint (`POST`/`PATCH`/`DELETE`) returns `401` with `Authentication required`, before body validation:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
 
 An unknown or out-of-scope job application ID returns `404` (`GET`/`PATCH`/`DELETE /jobs/:id`):
 
@@ -627,8 +644,7 @@ GET /glucose?date_from=2026-06-01&date_to=2026-06-30
       "afterMealValue": null,
       "note": "Before breakfast",
       "ignored": false,
-      "reason": "",
-      "isDemo": false
+      "reason": ""
     }
   ]
 }
@@ -691,6 +707,16 @@ Both `fastingValue`/`afterMealValue` provided returns `400` on `POST`/`PATCH`; n
 ```
 
 An invalid or expired token returns `401` on any Glucose endpoint (see Authentication).
+
+A guest (no token) calling a write endpoint (`POST`/`PATCH`) returns `401` with `Authentication required`, before body validation:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
 
 An unknown or out-of-scope glucose measurement ID returns `404` (`PATCH /glucose/:id`):
 
@@ -774,6 +800,16 @@ Updates, ignores or restores a blood pressure measurement.
 
 An invalid or expired token returns `401` on any Blood Pressure endpoint (see Authentication).
 
+A guest (no token) calling a write endpoint (`POST`/`PATCH`) returns `401` with `Authentication required`, before body validation:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
+
 An unknown or out-of-scope blood pressure measurement ID returns `404` (`PATCH /blood-pressure/:id`):
 
 ```json
@@ -853,6 +889,16 @@ A non-positive `value` returns `400` (`POST`/`PATCH`):
 ```
 
 An invalid or expired token returns `401` on any Weight endpoint (see Authentication).
+
+A guest (no token) calling a write endpoint (`POST`/`PATCH`) returns `401` with `Authentication required`, before body validation:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
 
 An unknown or out-of-scope weight measurement ID returns `404` (`PATCH /weight/:id`):
 
@@ -935,6 +981,16 @@ An `intensity` outside `1`–`10` returns `400` (`POST`/`PATCH`):
 
 An invalid or expired token returns `401` on any Symptoms endpoint (see Authentication).
 
+A guest (no token) calling a write endpoint (`POST`/`PATCH`) returns `401` with `Authentication required`, before body validation:
+
+```json
+{
+  "error": {
+    "message": "Authentication required"
+  }
+}
+```
+
 An unknown or out-of-scope symptom entry ID returns `404` (`PATCH /symptoms/:id`):
 
 ```json
@@ -994,61 +1050,109 @@ Returns aggregated Health Monitor data.
 }
 ```
 
-An invalid or expired token returns `401` (see Authentication). There is no `404` case — `/dashboard` is not a by-id resource.
+An invalid or expired token returns `401` (see Authentication). A guest receives demo data, a user receives their own data. There is no `404` case — `/dashboard` is not a by-id resource.
 
 ---
 
 # Authentication API
 
-Introduced in Version 2. See the Authentication section above for identity-resolution rules.
+Introduced in Version 2; rebuilt in Version 4 as an open multi-user model — see ADR-014. See the Authentication section above for identity-resolution rules.
 
-Version 3 adds Google Sign-In as an alternative login method for the same single admin account — see ADR-013. It never creates a new account: a Google account whose email doesn't match the existing admin is rejected.
+A user account has a `username` and at least one login method: a password, a linked Google account, or both. No email is collected or stored anywhere.
+
+**User object** returned by the API:
+
+```json
+{
+  "id": "5b1c9a52-0e7a-4a43-9e8b-2d1a7f6c3e10",
+  "username": "nick",
+  "hasPassword": true,
+  "createdAt": "2026-11-06T10:00:00.000Z",
+  "updatedAt": "2026-11-06T10:00:00.000Z"
+}
+```
+
+`hasPassword` is `false` for accounts created through Google that have not set a password. The user object never contains `passwordHash`, the Google `sub`, an email or a role.
 
 ---
 
 ## POST /auth/register
 
-**Not implemented.** The application is single-tenant: the only account (the admin) is provisioned once via an out-of-band bootstrap script (`scripts/create-admin.ts`, see `development.md`), never through the public API. Self-service registration is intentionally deferred until a multi-user version is actually needed.
-
-Requests to this path return the standard `404` envelope.
-
----
-
-## POST /auth/login
-
-Authenticates the admin and returns an access token.
+Creates an account and signs it in immediately — no separate login step.
 
 ### Request Body
 
 ```json
 {
-  "email": "admin@example.com",
+  "username": "nick",
   "password": "correct horse battery staple"
 }
 ```
 
+* `username`: 3–32 characters, `[A-Za-z0-9_-]` only. Unique **case-insensitively** (`Nick` and `nick` are the same name); stored and displayed as entered.
+* `password`: 8–128 characters. Passwords cannot be recovered — a lost password means a lost account.
+
 ### Response
+
+```http
+201 Created
+```
 
 ```json
 {
   "data": {
     "token": "<jwt>",
     "user": {
-      "id": "user_1",
-      "email": "admin@example.com",
-      "role": "ADMIN",
-      "createdAt": "2026-07-02T10:00:00.000Z",
-      "updatedAt": "2026-07-02T10:00:00.000Z"
+      "id": "5b1c9a52-0e7a-4a43-9e8b-2d1a7f6c3e10",
+      "username": "nick",
+      "hasPassword": true,
+      "createdAt": "2026-11-06T10:00:00.000Z",
+      "updatedAt": "2026-11-06T10:00:00.000Z"
     }
   }
 }
 ```
 
-`passwordHash` is never included.
+### Errors
+
+Username already taken (case-insensitive) → `409`:
+
+```json
+{
+  "error": {
+    "message": "Username is already taken"
+  }
+}
+```
+
+A structurally invalid body (username/password rules, missing fields, unknown keys) returns `400` with the standard validation envelope.
+
+---
+
+## POST /auth/login
+
+Authenticates a user by username and password and returns an access token. The username is matched case-insensitively (`NICK` logs into `nick`).
+
+### Request Body
+
+```json
+{
+  "username": "nick",
+  "password": "correct horse battery staple"
+}
+```
+
+### Response
+
+```http
+200 OK
+```
+
+Same shape as `POST /auth/register` (`{ data: { token, user } }`).
 
 ### Errors
 
-Wrong email and wrong password are indistinguishable — both return:
+Unknown username, wrong password, and a Google-only account (no password) are indistinguishable — all return:
 
 ```http
 401 Unauthorized
@@ -1068,88 +1172,207 @@ A structurally invalid body (missing/malformed fields, unknown keys) returns `40
 
 ## GET /auth/me
 
-Returns the current authenticated user. Requires a valid admin token.
+Returns the current user. Requires a valid token.
 
 ### Response
 
 ```json
 {
   "data": {
-    "id": "user_1",
-    "email": "admin@example.com",
-    "role": "ADMIN",
-    "createdAt": "2026-07-02T10:00:00.000Z",
-    "updatedAt": "2026-07-02T10:00:00.000Z"
+    "id": "5b1c9a52-0e7a-4a43-9e8b-2d1a7f6c3e10",
+    "username": "nick",
+    "hasPassword": true,
+    "createdAt": "2026-11-06T10:00:00.000Z",
+    "updatedAt": "2026-11-06T10:00:00.000Z"
   }
 }
 ```
 
 ### Errors
 
-Missing, invalid or expired token:
+No token (guest) → `401` `Authentication required`. Invalid or expired token, or a deleted account → `401` `Invalid or expired token`.
+
+---
+
+## DELETE /auth/me
+
+Deletes the caller's account together with **all of its data** in every business table (job applications, glucose, blood pressure, weight, symptoms). Irreversible. No password re-entry is required (Google accounts have no password) — confirmation is the frontend's job.
+
+### Response
 
 ```http
-401 Unauthorized
+204 No Content
 ```
+
+### Behaviour
+
+Business data is deleted first, the account row last. A partial failure leaves the account in place, and repeating the request finishes the job. After the account is gone, its token is rejected with `401 Invalid or expired token`.
+
+### Errors
+
+No token (guest) → `401` `Authentication required`. Invalid or expired token → `401` `Invalid or expired token`.
+
+---
+
+## POST /auth/me/password
+
+Sets a password on an account that has none — a Google-only account (`hasPassword: false`). Optional capability: frontends may or may not expose it.
+
+### Request Body
+
+```json
+{
+  "password": "correct horse battery staple",
+  "username": "nick"
+}
+```
+
+* `password`: required, 8–128 characters.
+* `username`: optional; replaces the generated username (same rules as registration).
+
+### Response
+
+```http
+200 OK
+```
+
+```json
+{
+  "data": {
+    "id": "5b1c9a52-0e7a-4a43-9e8b-2d1a7f6c3e10",
+    "username": "nick",
+    "hasPassword": true,
+    "createdAt": "2026-11-06T10:00:00.000Z",
+    "updatedAt": "2026-11-06T10:05:00.000Z"
+  }
+}
+```
+
+### Errors
+
+The account already has a password → `409`. There is no password change in V4:
+
+```json
+{
+  "error": {
+    "message": "Password is already set"
+  }
+}
+```
+
+The requested `username` is taken → `409` `Username is already taken` (nothing is changed). Invalid body → `400`. No token (guest) → `401` `Authentication required`; invalid or expired token → `401` `Invalid or expired token`.
+
+---
+
+## POST /auth/google/link
+
+Step 1 of linking a Google account to the signed-in (password) account. Requires a valid token. This is a `POST` with a JSON body because a browser navigation cannot carry the `Authorization` header and a token must never be put into a URL.
+
+### Request Body
+
+```json
+{
+  "redirect": "https://job-tracker-new.pages.dev/auth/callback"
+}
+```
+
+`redirect` must pass the frontend-origin allowlist (see `GET /auth/google`).
+
+### Response
+
+```http
+200 OK
+```
+
+```json
+{
+  "data": {
+    "url": "https://accounts.google.com/o/oauth2/v2/auth?...&state=<signed-state>"
+  }
+}
+```
+
+The frontend navigates the browser to `url`. The signed `state` carries the user id and the link intent. After consent, Google returns to `GET /auth/google/callback`, which attaches the Google account to this user and redirects to `<redirect>#linked=google`.
+
+### Errors
+
+The account already has a Google account linked → `409`:
+
+```json
+{
+  "error": {
+    "message": "Google account is already linked"
+  }
+}
+```
+
+A `redirect` that fails the allowlist → `400` `redirect must be an allowed frontend URL`. No token (guest) → `401` `Authentication required`; invalid or expired token → `401` `Invalid or expired token`.
+
+If the Google account is already linked to a different user, the failure surfaces at the callback as `#error=google_already_used` (accounts are never merged). There is no unlinking.
 
 ---
 
 ## GET /auth/google
 
-Redirects the browser to Google's consent screen to begin Google Sign-In. Requested scope: `openid email` only.
+Redirects the browser to Google's consent screen to begin Google Sign-In. Requested scope: `openid` only — no email is requested from Google or stored.
+
+### Query Parameters
+
+| Name     | Type   | Required | Description                                                                 |
+| -------- | ------ | -------- | --------------------------------------------------------------------------- |
+| redirect | string | Yes      | Frontend page the browser is sent back to, with the result in the URL fragment. |
+
+`redirect` is validated against the allowlist of frontend origins (`ALLOWED_FRONTEND_ORIGINS`, plus any `http(s)://localhost:<port>` and `http(s)://127.0.0.1:<port>`): it must be an `http`/`https` URL whose origin matches an allowed origin exactly and must not contain a `#`. It is stored inside the signed `state`, so the callback trusts only what the server signed itself.
 
 ### Response
 
 ```http
 302 Found
-Location: https://accounts.google.com/o/oauth2/v2/auth?...&state=<signed-state>
+Location: https://accounts.google.com/o/oauth2/v2/auth?...&scope=openid&state=<signed-state>
 ```
 
 `state` is a short-lived (10 minute), server-signed token — not a value the client generates or interprets.
+
+### Errors
+
+Missing or non-allowlisted `redirect` → `400` JSON, **no redirect** is made:
+
+```json
+{
+  "error": {
+    "message": "redirect must be an allowed frontend URL"
+  }
+}
+```
 
 ---
 
 ## GET /auth/google/callback
 
-Google redirects here after the user consents, with `code` and `state` query parameters. On success, behaves exactly like a successful `POST /auth/login`:
+Google redirects here after the user consents (or cancels), with `state` and either `code` or `error` query parameters. The result is always delivered to the frontend as a `302` to `<redirect>#...` — the token travels in the URL **fragment**, which is never sent to servers or logged.
+
+The first Google sign-in with an unknown Google account creates a user with a generated username (`user-` + 6 hex characters) and no password. Repeat sign-ins find the existing user.
 
 ### Response
 
-```json
-{
-  "data": {
-    "token": "<jwt>",
-    "user": {
-      "id": "user_1",
-      "email": "admin@example.com",
-      "role": "ADMIN",
-      "createdAt": "2026-07-02T10:00:00.000Z",
-      "updatedAt": "2026-07-02T10:00:00.000Z"
-    }
-  }
-}
-```
+| Outcome                              | Redirect                                |
+| ------------------------------------ | --------------------------------------- |
+| Sign-in succeeded                    | `<redirect>#token=<jwt>`                |
+| Account linked (`link` flow)         | `<redirect>#linked=google`              |
+| User cancelled on Google's screen    | `<redirect>#error=access_denied`        |
+| Any other failure after a valid `state` (no `code`, code exchange failed, Google account unusable, link target changed) | `<redirect>#error=google_failed` |
+| Google account already belongs to another user (`link` flow) | `<redirect>#error=google_already_used` |
 
-The issued token is identical in shape (claims, expiry) to one issued by `POST /auth/login` — callers cannot tell which method was used to obtain it.
+The token is identical in shape (claims, expiry) to one issued by `POST /auth/login` — callers cannot tell which method was used.
 
 ### Errors
 
-`state` missing, invalid, expired, or not issued by this server → `401`, before any call to Google is made:
+`state` missing, invalid, expired, or not issued by this server → `401` JSON (the redirect target is unknown, so there is nobody to redirect to), before any call to Google is made:
 
 ```json
 {
   "error": {
     "message": "Invalid or expired state"
-  }
-}
-```
-
-`state` valid, but the Google account's email doesn't match the existing admin's email (case-insensitive), Google reports the email as unverified, or the token/userinfo exchange with Google itself fails → `401`. **No account is ever created** in any of these cases:
-
-```json
-{
-  "error": {
-    "message": "Invalid credentials"
   }
 }
 ```

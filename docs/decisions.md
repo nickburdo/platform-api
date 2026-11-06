@@ -532,7 +532,7 @@ Single-Tenant Authentication: Closed Registration, Guest as Absence of Token
 
 ### Status
 
-Accepted (2026-07-01, Version 2 planning; recorded 2026-07-02)
+Superseded by ADR-014 (2026-11-06, Version 4). Accepted on 2026-07-01 (Version 2 planning; recorded 2026-07-02).
 
 ---
 
@@ -577,7 +577,7 @@ Google Login as an Additional Method for the Single Admin Account, No New-Accoun
 
 ### Status
 
-Accepted (2026-07-03, Version 3 planning)
+Superseded by ADR-014 (2026-11-06, Version 4). Accepted on 2026-07-03 (Version 3 planning).
 
 ---
 
@@ -609,6 +609,61 @@ Version 3 adds Google OAuth as an alternative login method. Version 2's single-t
 - A Google account that has never been the admin's login method still works the moment its email matches the existing row — no separate "link your Google account" step is needed or offered.
 - If the admin ever changes their Google account's email, Google login for the new address won't work until `scripts/create-admin.ts` is re-run to update the stored email — an accepted operational tradeoff of matching on email rather than Google's stable account ID.
 - `resolveIdentity` (V2) requires zero changes — a Google-issued token is indistinguishable in shape from a password-issued one.
+
+---
+
+# ADR-014
+
+## Title
+
+Open Multi-User Model with Username Accounts, No Email
+
+---
+
+### Status
+
+Accepted (2026-11-06, Version 4 planning). Supersedes ADR-012 and ADR-013.
+
+---
+
+### Context
+
+ADR-012 made the platform single-tenant (one admin, guests read and write demo data) and ADR-013 restricted Google login to that admin's email. The two portfolio frontends now need to be usable by visitors: they must be able to look around without an account and to create their own account in seconds. The owner's explicit concern is that asking for an email address scares visitors away. Production holds no real data yet (verified 2026-11-06: zero non-demo rows in all five business tables), so there is nothing to migrate.
+
+---
+
+### Decision
+
+- **Guests are read-only.** A request without a token sees only demo data (`user_id IS NULL`) and cannot create, update, delete, ignore or restore anything: any write is `401 Authentication required`, raised before body validation.
+- **Anyone can register** with a username (3–32 characters, `[A-Za-z0-9_-]`, unique case-insensitively) and a password (8–128 characters). No email is collected or stored anywhere, so there is no password recovery: a lost password means a lost account, and the frontend warns about it.
+- **Google Sign-In works by Google's stable account id** (OpenID `sub`), with the `openid` scope only — no email is requested. The first Google login creates an account with a generated username (`user-` + 6 hex characters) and no password; repeat logins find it.
+- **Account linking in both directions, no merging.** A password account can link Google (`POST /auth/google/link` returns the Google URL, because a browser navigation cannot carry the `Authorization` header); a Google-only account can set a password (`POST /auth/me/password`). A Google account already linked to another user is refused. No unlinking.
+- **No roles.** All users are equal; the `ADMIN` role, the admin bootstrap script and the `isDemo` flag are removed.
+- **Per-user data.** Every business row carries a nullable `user_id` (plain text, no foreign key — D1 cannot reference another database); demo rows have `user_id = NULL`. An authenticated user sees and edits only their own rows, never demo rows.
+- **Existence check on every authenticated request.** A valid token of a deleted account is `401 Invalid or expired token`, never a silent fallback to guest.
+- **Account deletion** (`DELETE /auth/me`) removes the business data in both business databases first and the `auth-db` user row last, so a partial failure leaves the account in place and a repeated request finishes the job.
+- **Google redirect goes back to the frontend** with the result in the URL fragment (`#token=`, `#linked=google`, `#error=<code>`). The frontend URL travels inside the signed `state` and must pass an origin allowlist (`ALLOWED_FRONTEND_ORIGINS` plus `localhost` / `127.0.0.1`); adding a frontend is a config change and a deploy, with no Google Console change.
+
+---
+
+### Rationale
+
+- A username-only registration removes the main source of sign-up friction while keeping accounts private; Google is offered as the more reliable option, since it can be recovered.
+- Matching Google accounts by `sub` rather than by email makes the identity stable and keeps email out of the system entirely.
+- A scope check in a dedicated guard before validation gives frontends one stable signal (`401 Authentication required`) for the "register to add your own data" prompt.
+- Returning the token in the fragment keeps it out of server logs and `Referer` headers; the allowlist stops the callback from leaking a token to a foreign origin.
+- A nullable `user_id` replaces the boolean `isDemo` with a strictly more general partition: the same column separates demo data from every user.
+
+---
+
+### Consequences
+
+- Breaking API change: login body, user shape, guest writes and the Google callback all change. Acceptable, since the only consumers are the owner's two frontends.
+- There is no rate limiting or CAPTCHA on registration or login in V4 (backlog).
+- Tokens are not revocable server-side; logout stays client-side. Only deletion of the account invalidates its tokens (through the existence check).
+- A request racing with account deletion could insert one unreachable row; the window is accepted (no tombstone).
+- Deployment must re-count non-demo rows right before migrating: any such row would otherwise silently become public demo data (see `deployment.md`).
+- Frontend behaviour is specified in `frontend-guide.md`; adding a frontend is described in `connecting-a-frontend.md`.
 
 ---
 
