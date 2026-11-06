@@ -26,7 +26,7 @@
 - All code comments in English.
 - Username: `^[A-Za-z0-9_-]{3,32}$`, unique case-insensitively. Password: 8–128 chars. Google scope: exactly `openid`.
 - Allowed frontend origins: `https://health-monitor-new.pages.dev`, `https://job-tracker-new.pages.dev`, plus `http(s)://localhost:<any>` and `http(s)://127.0.0.1:<any>`.
-- Exact messages: `Authentication required` (401, guest on a user-only route), `Invalid or expired token` (401, bad/expired token or deleted user), `Invalid credentials` (401, login), `Username is already taken` (409), `Invalid or expired state` (401, Google callback), `redirect must be an allowed frontend URL` (400), `Google account is already linked` (409), `Password is already set` (409). Fragment results: `#token=`, `#linked=google`; error codes `access_denied`, `google_failed`, `google_already_used`.
+- Exact messages: `Authentication required` (401, guest on a user-only route), `Invalid or expired token` (401, bad/expired token or deleted user), `Invalid credentials` (401, login), `Username is already taken` (409), `Invalid or expired state` (401, Google callback), `redirect must be an allowed frontend URL` (400), `Google account is already linked` (409), `Password is already set` (409). Fragment results: `#token=`, `#linked=google`; error codes `access_denied`, `google_failed`, `google_already_used`. **Revision (Task 8b, U17):** the link callback now returns `#link_ticket=` instead of `#linked=google` / `#error=google_already_used`; those outcomes moved to `POST /auth/google/link/complete` as `409 Google account is already used by another user` / `409 Google account is already linked`, and an invalid/foreign ticket is `400 Invalid or expired link ticket`.
 
 ## Review Focus
 
@@ -63,7 +63,7 @@ Implementation-level decisions made while writing this plan (the product decisio
 19. **Linking flow state.** `issueOAuthState(secret, { redirect, intent: 'login' } | { redirect, intent: 'link', userId })`; `verifyOAuthState` returns the same union or `null`. The callback re-checks at link time that the user still exists and still has no `google_sub` (the 10-minute state window allows a concurrent change); failure → `#error=google_failed`.
 20. **Link endpoint is `POST` with a JSON body** returning the Google URL, because a browser navigation cannot carry the `Authorization` header and a JWT must never be put into a URL.
 21. **Set-password endpoint** `POST /auth/me/password` updates `password_hash` (and `username` if given) in one `UPDATE … WHERE id = ? AND password_hash IS NULL`; zero affected rows → `409 Password is already set`; unique violation on username → `409 Username is already taken`.
-22. **Link ticket** — 5-minute HS256 JWT `purpose: 'google_link'` with `userId` + `sub`, delivered as `#link_ticket=`; the callback never links by itself (CSRF: the browser completing Google may not be the user who started).
+22. **Link ticket** — 5-minute HS256 JWT `purpose: 'google_link'` with `userId` + the Google sub (JWT claim named `googleSub`, never `sub`, so a ticket can never pass `verifyToken` as an access token), delivered as `#link_ticket=`; the callback never links by itself (CSRF: the browser completing Google may not be the user who started).
 23. **`POST /auth/google/link/complete`** links only when caller `userId` === ticket `userId`; mismatch is reported exactly like an invalid ticket (`400`), so nothing about the ticket owner leaks.
 24. **Login password `.max(128)`** for symmetry with register.
 25. **Deploy safety:** pre-apply `migrations list` check, Time Travel bookmarks and a documented combined rollback (code rollback alone would leave V3 code on the V4 schema).
@@ -226,6 +226,8 @@ Implementation-level decisions made while writing this plan (the product decisio
 - [ ] **Step 8:** Gate, commit `feat: V4 Task 6 - Google Sign-In by sub with frontend redirect`.
 
 ### Task 7: Account linking (both directions, U16)
+
+> Link-callback outcomes below are as originally built; superseded by Task 8b (U17, two-step linking).
 
 **Files:** Modify `src/utils/oauth-state.ts`, `src/db/auth/users.repository.ts`, `src/services/auth.service.ts`, `src/schemas/auth.schema.ts`, `src/routes/auth.routes.ts`. Tests: `oauth-state.test.ts`, `users.repository.repo.test.ts`, `auth.service.test.ts`, `auth.routes.test.ts`.
 
