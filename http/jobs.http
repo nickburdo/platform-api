@@ -144,6 +144,7 @@ client.test('400, _errors', function () {
 
 ### Details — success
 GET {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
 
 > {%
 client.test('200, same id', function () {

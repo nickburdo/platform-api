@@ -5,12 +5,9 @@
 # The other .http files (jobs, glucose, ...) use {{token}} for their writes, so
 # run Register first.
 #
-# The LAST request deletes the account together with all its data, which also
-# invalidates {{token}} — run it after the other files, or Register again.
+# The delete-me flow at the end registers its own throwaway account ({{deleteToken}})
+# and deletes that one, so {{token}} stays valid for the other files.
 #
-# Google sign-in itself needs a browser, so only its HTTP-level error paths are
-# covered here (the 302 to Google and the callback fragments are not asserted).
-
 ### Register — password too short → 400
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
@@ -298,15 +295,29 @@ client.test('401, Authentication required', function () {
 });
 %}
 
-### DELETE /auth/me — deletes the account and all its data (LAST: invalidates {{token}})
+### Register a separate throwaway account for the delete-me flow
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "del{{$random.alphanumeric(8)}}",
+  "password": "http-client-pass-1"
+}
+
+> {%
+client.test('201', function () { client.assert(response.status === 201, 'expected 201'); });
+client.global.set('deleteToken', response.body.data.token);
+%}
+
+### DELETE /auth/me — deletes the throwaway account and all its data
 DELETE {{baseUrl}}/auth/me
-Authorization: Bearer {{token}}
+Authorization: Bearer {{deleteToken}}
 
 > {% client.test('204', function () { client.assert(response.status === 204, 'expected 204'); }); %}
 
 ### GET /auth/me — token of the deleted account → 401, no fallback to guest
 GET {{baseUrl}}/auth/me
-Authorization: Bearer {{token}}
+Authorization: Bearer {{deleteToken}}
 
 > {%
 client.test('401, Invalid or expired token', function () {
@@ -314,3 +325,9 @@ client.test('401, Invalid or expired token', function () {
   client.assert(response.body.error.message === 'Invalid or expired token', 'expected Invalid or expired token');
 });
 %}
+
+### GET /auth/me — {{token}} of the main account is still valid
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+> {% client.test('200', function () { client.assert(response.status === 200, 'expected 200'); }); %}
