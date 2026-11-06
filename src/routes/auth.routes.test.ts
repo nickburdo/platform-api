@@ -23,8 +23,9 @@ import {
 import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
-import { issueToken } from '../utils/jwt';
-import { issueOAuthState } from '../utils/oauth-state';
+import { toPublicUser } from '../services/auth.service';
+import { issueToken, verifyToken } from '../utils/jwt';
+import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { resolveGoogleCallback } from './auth.routes';
 import { bearer, request, requestJson, seedUserAndGetToken } from './test-helpers';
 
@@ -215,119 +216,193 @@ describe('identity resolution', () => {
   });
 });
 
+const FRONTEND = 'https://job-tracker-new.pages.dev/auth/callback';
+
 describe('GET /auth/google', () => {
-  it('redirects to the Google consent screen with the required params', async () => {
-    const res = await request('/auth/google', { redirect: 'manual' });
+  it('redirects to the Google consent screen with scope=openid and a state', async () => {
+    const res = await request(`/auth/google?redirect=${encodeURIComponent(FRONTEND)}`, {
+      redirect: 'manual',
+    });
     expect(res.status).toBe(302);
     const location = new URL(res.headers.get('Location')!);
+    expect(location.host).toBe('accounts.google.com');
     expect(`${location.origin}${location.pathname}`).toBe(
       'https://accounts.google.com/o/oauth2/v2/auth',
     );
     expect(location.searchParams.get('client_id')).toBe(env.GOOGLE_CLIENT_ID);
     expect(location.searchParams.get('response_type')).toBe('code');
-    expect(location.searchParams.get('scope')).toBe('openid email');
+    expect(location.searchParams.get('scope')).toBe('openid');
     expect(location.searchParams.get('redirect_uri')).toMatch(/\/auth\/google\/callback$/);
-    expect(location.searchParams.get('state')).toBeTruthy();
+    const state = location.searchParams.get('state')!;
+    expect(await verifyOAuthState(state, env.JWT_SECRET)).toEqual({ redirect: FRONTEND });
+  });
+
+  it('rejects a missing redirect with 400', async () => {
+    const res = await request('/auth/google', { redirect: 'manual' });
+    expect(res.status).toBe(400);
+  });
+
+  it.each([
+    'https://job-tracker-new.pages.dev.evil.com/x',
+    'https://evil.com/?r=https://job-tracker-new.pages.dev',
+    '//evil.com',
+    'javascript:alert(1)',
+    'http://job-tracker-new.pages.dev/x',
+    'https://job-tracker-new.pages.dev/x#frag',
+  ])('rejects the look-alike redirect %s with 400 and no redirect', async (redirect) => {
+    const res = await request(`/auth/google?redirect=${encodeURIComponent(redirect)}`, {
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get('Location')).toBeNull();
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('redirect must be an allowed frontend URL');
   });
 });
 
 describe('GET /auth/google/callback', () => {
-  it('rejects a missing code/state with 400', async () => {
-    const res = await request('/auth/google/callback');
+  it('rejects a missing state with 400', async () => {
+    const res = await request('/auth/google/callback?code=irrelevant', { redirect: 'manual' });
     expect(res.status).toBe(400);
   });
 
-  it('rejects an invalid state with 401, before ever reaching Google', async () => {
-    const res = await request('/auth/google/callback?code=irrelevant&state=garbage');
+  it('rejects a tampered state with 401 JSON, before ever reaching Google', async () => {
+    const res = await request('/auth/google/callback?code=irrelevant&state=garbage', {
+      redirect: 'manual',
+    });
     expect(res.status).toBe(401);
     const body = (await res.json()) as ErrorEnvelope;
     expect(body.error.message).toBe('Invalid or expired state');
   });
 
-  it('rejects an expired/wrong-purpose state with 401', async () => {
-    // A real access token (wrong `purpose`) is a structurally valid JWT
-    // signed with the same secret — must still be rejected as state.
+  it('rejects a wrong-purpose state (a real access token) with 401', async () => {
     const { token } = await seedUserAndGetToken();
-    const res = await request(`/auth/google/callback?code=irrelevant&state=${token}`);
+    const res = await request(`/auth/google/callback?code=irrelevant&state=${token}`, {
+      redirect: 'manual',
+    });
     expect(res.status).toBe(401);
+  });
+
+  it('redirects to the frontend with #error=access_denied when the user cancels', async () => {
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const res = await request(`/auth/google/callback?error=access_denied&state=${state}`, {
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe(`${FRONTEND}#error=access_denied`);
   });
 });
 
-describe('resolveGoogleCallback (temporary sub lookup until Task 6)', () => {
+describe('resolveGoogleCallback', () => {
   const REDIRECT_URI = 'https://example.com/auth/google/callback';
   const oauthEnv = {
     GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
     JWT_SECRET: env.JWT_SECRET,
+    ALLOWED_FRONTEND_ORIGINS: env.ALLOWED_FRONTEND_ORIGINS,
   };
+  const logError = vi.fn();
 
-  async function seedGoogleUser(sub: string) {
-    const db = await freshAuthDb();
-    const now = new Date().toISOString();
-    await db.insert(users).values({
-      id: 'google-1',
-      username: 'googler',
-      passwordHash: null,
-      googleSub: sub,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return db;
-  }
+  beforeEach(() => {
+    logError.mockClear();
+  });
 
   it('never calls exchange when the state is invalid', async () => {
     const db = await freshAuthDb();
     const exchange = vi.fn();
     const outcome = await resolveGoogleCallback(
       { code: 'irrelevant', state: 'garbage' },
-      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
     );
-    expect(outcome).toEqual({ ok: false, reason: 'invalid_state' });
+    expect(outcome).toEqual({ kind: 'invalid_state' });
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it('issues a token when the exchanged sub matches an existing user', async () => {
-    const db = await seedGoogleUser('sub-123');
-    const state = await issueOAuthState(env.JWT_SECRET);
+  it('rejects a validly signed state whose redirect is not allowed (defense in depth)', async () => {
+    const db = await freshAuthDb();
+    const exchange = vi.fn();
+    const state = await issueOAuthState(env.JWT_SECRET, 'https://evil.com/cb');
+    const outcome = await resolveGoogleCallback(
+      { code: 'c', state },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
+    );
+    expect(outcome).toEqual({ kind: 'invalid_state' });
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  it('creates a Google-only account and redirects with a verifiable token fragment', async () => {
+    const db = await freshAuthDb();
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
     const exchange = vi.fn().mockResolvedValue({ sub: 'sub-123' });
 
     const outcome = await resolveGoogleCallback(
       { code: 'auth-code', state },
-      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
     );
 
-    expect(outcome.ok).toBe(true);
-    if (outcome.ok) {
-      expect(outcome.result.user.username).toBe('googler');
-      expect(outcome.result.user).not.toHaveProperty('passwordHash');
-    }
     expect(exchange).toHaveBeenCalledWith('auth-code', oauthEnv, REDIRECT_URI);
+    expect(outcome.kind).toBe('redirect');
+    if (outcome.kind !== 'redirect') {
+      return;
+    }
+    const [base, fragment] = outcome.location.split('#');
+    expect(base).toBe(FRONTEND);
+    const token = new URLSearchParams(fragment).get('token')!;
+    const payload = await verifyToken(token, env.JWT_SECRET);
+    const user = await findUserById(db, payload!.sub);
+    expect(user?.googleSub).toBe('sub-123');
+    expect(user?.passwordHash).toBeNull();
+    expect(toPublicUser(user!).hasPassword).toBe(false);
   });
 
-  it('rejects with no user created when the sub has no matching user', async () => {
-    const db = await seedGoogleUser('sub-123');
-    const state = await issueOAuthState(env.JWT_SECRET);
-    const exchange = vi.fn().mockResolvedValue({ sub: 'someone-else' });
-
-    const outcome = await resolveGoogleCallback(
-      { code: 'auth-code', state },
-      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
-    );
-    expect(outcome).toEqual({ ok: false, reason: 'invalid_credentials' });
-    const rows = await db.select().from(users);
-    expect(rows).toHaveLength(1);
-  });
-
-  it('rejects when exchange itself fails (bad/expired code)', async () => {
+  it('redirects with #error=google_failed when exchange throws, logging the cause', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET);
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
     const exchange = vi.fn().mockRejectedValue(new Error('Google token exchange failed: 400'));
 
     const outcome = await resolveGoogleCallback(
       { code: 'bad-code', state },
-      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
     );
-    expect(outcome).toEqual({ ok: false, reason: 'invalid_credentials' });
+    expect(outcome).toEqual({ kind: 'redirect', location: `${FRONTEND}#error=google_failed` });
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(users)).toHaveLength(0);
+  });
+
+  it('redirects with #error=google_failed when there is no code and no error', async () => {
+    const db = await freshAuthDb();
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const exchange = vi.fn();
+    const outcome = await resolveGoogleCallback(
+      { state },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
+    );
+    expect(outcome).toEqual({ kind: 'redirect', location: `${FRONTEND}#error=google_failed` });
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  it('redirects with #error=google_failed for an error other than access_denied', async () => {
+    const db = await freshAuthDb();
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const exchange = vi.fn();
+    const outcome = await resolveGoogleCallback(
+      { state, error: 'server_error' },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
+    );
+    expect(outcome).toEqual({ kind: 'redirect', location: `${FRONTEND}#error=google_failed` });
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  it('redirects with #error=access_denied without calling exchange', async () => {
+    const db = await freshAuthDb();
+    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const exchange = vi.fn();
+    const outcome = await resolveGoogleCallback(
+      { state, error: 'access_denied' },
+      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
+    );
+    expect(outcome).toEqual({ kind: 'redirect', location: `${FRONTEND}#error=access_denied` });
+    expect(exchange).not.toHaveBeenCalled();
   });
 });
 

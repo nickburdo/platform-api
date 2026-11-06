@@ -11,9 +11,13 @@ function secretKey(secret: string): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export async function issueOAuthState(secret: string): Promise<string> {
+// `redirect` (the allow-listed frontend URL, validated before issuing) travels
+// inside the signed state so the callback trusts only what this server signed
+// itself (v4-plan.md Decision 13).
+export async function issueOAuthState(secret: string, redirect: string): Promise<string> {
   return new SignJWT({
     purpose: STATE_PURPOSE,
+    redirect,
     // Not verified by verifyOAuthState below — Decision #8's storageless
     // design has nothing to check it against (no server-side nonce
     // tracking), so it provides no replay protection by itself. CSRF
@@ -28,14 +32,21 @@ export async function issueOAuthState(secret: string): Promise<string> {
     .sign(secretKey(secret));
 }
 
-// Returns whether `token` is a valid, unexpired state issued by this server
-// for this exact purpose. Any failure (bad signature, malformed, expired,
-// wrong `purpose`) returns false — the caller rejects before calling Google.
-export async function verifyOAuthState(token: string, secret: string): Promise<boolean> {
+// Returns the claims of a valid, unexpired state issued by this server for
+// this exact purpose, or null on any failure (bad signature, malformed,
+// expired, wrong `purpose`, missing `redirect`) — the caller rejects before
+// calling Google.
+export async function verifyOAuthState(
+  token: string,
+  secret: string,
+): Promise<{ redirect: string } | null> {
   try {
-    const { payload } = await jwtVerify(token, secretKey(secret));
-    return payload.purpose === STATE_PURPOSE;
+    const { payload } = await jwtVerify(token, secretKey(secret), { algorithms: ['HS256'] });
+    if (payload.purpose !== STATE_PURPOSE || typeof payload.redirect !== 'string') {
+      return null;
+    }
+    return { redirect: payload.redirect };
   } catch {
-    return false;
+    return null;
   }
 }

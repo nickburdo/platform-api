@@ -4,12 +4,19 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app';
 import type { AuthDb } from '../db/auth/client';
 import { requireUser } from '../middleware/auth';
-import { googleCallbackQuerySchema, loginSchema, registerSchema } from '../schemas/auth.schema';
-import { deleteAccount, getMe, login, loginWithGoogle, register, type LoginResult } from '../services/auth.service';
+import { requestLogContext } from '../middleware/logging';
+import {
+  googleCallbackQuerySchema,
+  googleStartQuerySchema,
+  loginSchema,
+  registerSchema,
+} from '../schemas/auth.schema';
+import { deleteAccount, getMe, login, loginWithGoogle, register } from '../services/auth.service';
 import {
   exchangeGoogleCode,
   type GoogleOAuthEnv,
 } from '../services/google-oauth.service';
+import { isAllowedRedirect, parseAllowedOrigins } from '../utils/frontend-origins';
 import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { errorBody } from '../utils/responses';
 import { validationHook } from '../utils/validation';
@@ -65,59 +72,79 @@ function googleCallbackUrl(c: Context<AppEnv>): string {
   return `${new URL(c.req.url).origin}/auth/google/callback`;
 }
 
-authRoutes.get('/google', async (c) => {
-  const state = await issueOAuthState(c.env.JWT_SECRET);
+authRoutes.get('/google', zValidator('query', googleStartQuerySchema, validationHook), async (c) => {
+  const { redirect } = c.req.valid('query');
+  if (!isAllowedRedirect(redirect, parseAllowedOrigins(c.env.ALLOWED_FRONTEND_ORIGINS))) {
+    return c.json(errorBody('redirect must be an allowed frontend URL'), 400);
+  }
+  const state = await issueOAuthState(c.env.JWT_SECRET, redirect);
   const params = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID,
     redirect_uri: googleCallbackUrl(c),
     response_type: 'code',
-    scope: 'openid email',
+    scope: 'openid',
     state,
   });
   return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`, 302);
 });
 
-export type GoogleCallbackOutcome =
-  | { ok: true; result: LoginResult }
-  | { ok: false; reason: 'invalid_state' | 'invalid_credentials' };
+export type GoogleCallbackOutcome = { kind: 'invalid_state' } | { kind: 'redirect'; location: string };
 
 interface GoogleCallbackDeps {
   authDb: AuthDb;
-  env: GoogleOAuthEnv & { JWT_SECRET: string };
+  env: GoogleOAuthEnv & { JWT_SECRET: string; ALLOWED_FRONTEND_ORIGINS: string };
   redirectUri: string;
   exchange: typeof exchangeGoogleCode;
+  // Called with the cause of a swallowed failure (never the code or a token).
+  logError?: (message: string, err: unknown) => void;
 }
 
 // A plain function, not a Hono handler — takes its dependencies explicitly
 // (v3-plan.md Decision #11) so tests can substitute a fake `exchange` while
-// exercising state verification, email lookup, and JWT issuance for real
+// exercising state verification, account creation, and JWT issuance for real
 // against D1, with no Hono app or Context typing involved.
+//
+// Decision 14: an invalid state is the only case that cannot redirect (the
+// target is unknown). Every other outcome is a redirect to the frontend
+// carrying the result in the URL fragment, which is never sent to servers.
 export async function resolveGoogleCallback(
-  params: { code: string; state: string },
+  query: { state: string; code?: string; error?: string },
   deps: GoogleCallbackDeps,
 ): Promise<GoogleCallbackOutcome> {
-  if (!(await verifyOAuthState(params.state, deps.env.JWT_SECRET))) {
-    return { ok: false, reason: 'invalid_state' };
+  const state = await verifyOAuthState(query.state, deps.env.JWT_SECRET);
+  // Defense in depth: the redirect was validated when the state was issued,
+  // but it is re-checked against the current allow-list before use.
+  if (
+    !state ||
+    !isAllowedRedirect(state.redirect, parseAllowedOrigins(deps.env.ALLOWED_FRONTEND_ORIGINS))
+  ) {
+    return { kind: 'invalid_state' };
+  }
+  const to = (fragment: string): GoogleCallbackOutcome => ({
+    kind: 'redirect',
+    location: `${state.redirect}#${fragment}`,
+  });
+  const logError = deps.logError ?? ((message, err) => console.error(message, err));
+
+  if (query.error === 'access_denied') {
+    return to('error=access_denied');
+  }
+  if (query.error || !query.code) {
+    logError(`GET /auth/google/callback: Google returned error=${query.error ?? 'no code'}`, null);
+    return to('error=google_failed');
   }
 
-  let googleSub: string;
   try {
-    ({ sub: googleSub } = await deps.exchange(params.code, deps.env, deps.redirectUri));
+    const { sub } = await deps.exchange(query.code, deps.env, deps.redirectUri);
+    const result = await loginWithGoogle(deps.authDb, sub, deps.env.JWT_SECRET);
+    return to(`token=${encodeURIComponent(result.token)}`);
   } catch (err) {
-    // Logged here (rather than left to bubble to the global handleError)
-    // because it's deliberately caught and mapped to a generic 401 instead
-    // of a 500 — without this, a misconfigured secret, a redirect_uri
-    // mismatch, or a Google-side outage would be silently indistinguishable
-    // from a user just picking the wrong Google account.
-    console.error('GET /auth/google/callback: exchangeGoogleCode failed', err);
-    return { ok: false, reason: 'invalid_credentials' };
+    // Deliberately caught and mapped to a redirect instead of a 500 — without
+    // this log, a misconfigured secret, a redirect_uri mismatch or a
+    // Google-side outage would be invisible to the operator.
+    logError('GET /auth/google/callback: Google sign-in failed', err);
+    return to('error=google_failed');
   }
-
-  const result = await loginWithGoogle(deps.authDb, googleSub, deps.env.JWT_SECRET);
-  if (!result) {
-    return { ok: false, reason: 'invalid_credentials' };
-  }
-  return { ok: true, result };
 }
 
 authRoutes.get(
@@ -129,12 +156,12 @@ authRoutes.get(
       env: c.env,
       redirectUri: googleCallbackUrl(c),
       exchange: exchangeGoogleCode,
+      logError: (message, err) =>
+        console.error(message, { ...requestLogContext(c), error: err }),
     });
-    if (!outcome.ok) {
-      const message =
-        outcome.reason === 'invalid_state' ? 'Invalid or expired state' : 'Invalid credentials';
-      return c.json(errorBody(message), 401);
+    if (outcome.kind === 'invalid_state') {
+      return c.json(errorBody('Invalid or expired state'), 401);
     }
-    return c.json({ data: outcome.result });
+    return c.redirect(outcome.location, 302);
   },
 );

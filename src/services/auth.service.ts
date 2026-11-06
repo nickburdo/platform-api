@@ -104,16 +104,44 @@ export async function getMe(db: AuthDb, userId: string): Promise<PublicUser | un
   return user ? toPublicUser(user) : undefined;
 }
 
-// TEMPORARY minimal form (Task 6 rewrites the Google flow): looks the user up
-// by Google sub and never creates one.
+const GENERATED_USERNAME_ATTEMPTS = 5;
+
+function generateUsername(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(3));
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `user-${hex}`;
+}
+
+// Decision 15: find the account by Google `sub`, or create it (no password)
+// with a generated username. A unique violation is either a username
+// collision (retry with a new name) or a concurrent first login with the same
+// sub (the row now exists — use it). After 5 collisions it throws.
 export async function loginWithGoogle(
   db: AuthDb,
   googleSub: string,
   jwtSecret: string,
-): Promise<LoginResult | null> {
-  const user = await findUserByGoogleSub(db, googleSub);
+): Promise<LoginResult> {
+  let user = await findUserByGoogleSub(db, googleSub);
+  for (let attempt = 0; !user && attempt < GENERATED_USERNAME_ATTEMPTS; attempt++) {
+    const now = new Date().toISOString();
+    try {
+      user = await insertUser(db, {
+        id: crypto.randomUUID(),
+        username: generateUsername(),
+        passwordHash: null,
+        googleSub,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) {
+        throw err;
+      }
+      user = await findUserByGoogleSub(db, googleSub);
+    }
+  }
   if (!user) {
-    return null;
+    throw new Error('Could not generate a unique username for a Google account');
   }
   const token = await issueToken(user.id, jwtSecret);
   return { token, user: toPublicUser(user) };

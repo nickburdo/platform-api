@@ -1,11 +1,17 @@
 // Google token exchange via raw `fetch`, no OAuth library (v3-plan.md
-// Decision #7). Isolated as its own function, injected into the route
-// handler rather than called inline (Decision #11), so route tests can
-// substitute a fake — only this literal network boundary is faked; email
-// lookup and JWT issuance are exercised for real against D1.
+// Decision #7). Isolated as its own function, injected into the callback
+// resolver (v3 Decision #11), so tests can substitute a fake — only this
+// literal network boundary is faked.
+//
+// The account key (`sub`) comes from the `id_token` returned by the token
+// endpoint, decoded without signature verification (v4-plan.md Decision 11):
+// the token was received directly from Google over HTTPS in exchange for our
+// client secret. `iss`, `aud` and `sub` are still checked.
+
+import { decodeJwt } from 'jose';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
+const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
 export interface GoogleOAuthEnv {
   GOOGLE_CLIENT_ID: string;
@@ -13,21 +19,12 @@ export interface GoogleOAuthEnv {
 }
 
 export interface GoogleUserInfo {
-  // Google's stable account id (OIDC sub). TEMPORARY until Task 6.
+  // Google's stable account id (OpenID `sub`).
   sub: string;
 }
 
 interface GoogleTokenResponse {
-  access_token: string;
-}
-
-interface GoogleUserInfoResponse {
-  id?: string;
-  email?: string;
-  // Present when the `email` scope is granted. Only ever explicitly `false`
-  // for accounts Google itself hasn't verified — checked defensively even
-  // though a personal Gmail admin account will never hit this in practice.
-  verified_email?: boolean;
+  id_token?: string;
 }
 
 export async function exchangeGoogleCode(
@@ -50,21 +47,20 @@ export async function exchangeGoogleCode(
     const body = await tokenResponse.text().catch(() => '');
     throw new Error(`Google token exchange failed: ${tokenResponse.status} ${body}`);
   }
-  const { access_token: accessToken } = (await tokenResponse.json()) as GoogleTokenResponse;
+  const { id_token: idToken } = (await tokenResponse.json()) as GoogleTokenResponse;
+  if (!idToken) {
+    throw new Error('Google token response has no id_token');
+  }
 
-  const userInfoResponse = await fetch(GOOGLE_USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!userInfoResponse.ok) {
-    const body = await userInfoResponse.text().catch(() => '');
-    throw new Error(`Google userinfo fetch failed: ${userInfoResponse.status} ${body}`);
+  const claims = decodeJwt(idToken);
+  if (!claims.iss || !GOOGLE_ISSUERS.includes(claims.iss)) {
+    throw new Error('Google id_token has an unexpected issuer');
   }
-  const userInfo = (await userInfoResponse.json()) as GoogleUserInfoResponse;
-  if (!userInfo.email || userInfo.verified_email === false) {
-    throw new Error('Google account has no verified email');
+  if (claims.aud !== env.GOOGLE_CLIENT_ID) {
+    throw new Error('Google id_token audience does not match the client id');
   }
-  if (!userInfo.id) {
-    throw new Error('Google userinfo response has no id');
+  if (typeof claims.sub !== 'string' || claims.sub === '') {
+    throw new Error('Google id_token has no sub');
   }
-  return { sub: userInfo.id };
+  return { sub: claims.sub };
 }

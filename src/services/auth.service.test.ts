@@ -125,16 +125,28 @@ describe('login', () => {
   });
 });
 
-describe('loginWithGoogle (temporary sub lookup)', () => {
-  it('issues a token for the matching sub', async () => {
+describe('loginWithGoogle', () => {
+  it('logs in the existing account with that sub', async () => {
     await seedGoogleOnlyUser();
     const result = await loginWithGoogle(db, 'sub-123', SECRET);
-    expect(await verifyToken(result!.token, SECRET)).toEqual({ sub: 'google-1' });
+    expect(await verifyToken(result.token, SECRET)).toEqual({ sub: 'google-1' });
+    expect(await db.select().from(users)).toHaveLength(1);
   });
 
-  it('returns null for an unknown sub and creates no user', async () => {
-    await seedGoogleOnlyUser();
-    expect(await loginWithGoogle(db, 'other', SECRET)).toBeNull();
+  it('creates a password-less account with a generated username for an unknown sub', async () => {
+    const result = await loginWithGoogle(db, 'brand-new-sub', SECRET);
+    expect(result.user.username).toMatch(/^user-[0-9a-f]{6}$/);
+    expect(result.user.hasPassword).toBe(false);
+    const row = await findUserById(db, result.user.id);
+    expect(row?.passwordHash).toBeNull();
+    expect(row?.googleSub).toBe('brand-new-sub');
+    expect((await verifyToken(result.token, SECRET))?.sub).toBe(result.user.id);
+  });
+
+  it('returns the same account on a second login with the same sub (no second row)', async () => {
+    const first = await loginWithGoogle(db, 'brand-new-sub', SECRET);
+    const second = await loginWithGoogle(db, 'brand-new-sub', SECRET);
+    expect(second.user.id).toBe(first.user.id);
     expect(await db.select().from(users)).toHaveLength(1);
   });
 });

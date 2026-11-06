@@ -1,3 +1,4 @@
+import { SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { exchangeGoogleCode } from './google-oauth.service';
 
@@ -9,6 +10,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+async function idToken(claims: { iss?: string; aud?: string; sub?: string }): Promise<string> {
+  return new SignJWT({ ...(claims.sub !== undefined ? { sub: claims.sub } : {}) })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(claims.iss ?? 'https://accounts.google.com')
+    .setAudience(claims.aud ?? ENV.GOOGLE_CLIENT_ID)
+    .sign(new TextEncoder().encode('irrelevant-secret'));
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -23,15 +32,14 @@ afterEach(() => {
 });
 
 describe('exchangeGoogleCode', () => {
-  it('exchanges the code for a token, then the token for the Google account id and a verified email', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'sub-123', email: 'admin@example.com', verified_email: true }));
+  it('returns the sub from the id_token and makes only the token call', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id_token: await idToken({ sub: 'sub-123' }), access_token: 'unused' }),
+    );
 
-    const result = await exchangeGoogleCode('auth-code', ENV, REDIRECT_URI);
-    expect(result).toEqual({ sub: 'sub-123' });
+    expect(await exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).toEqual({ sub: 'sub-123' });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [tokenUrl, tokenInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(tokenUrl).toBe('https://oauth2.googleapis.com/token');
     expect(tokenInit.method).toBe('POST');
@@ -41,12 +49,13 @@ describe('exchangeGoogleCode', () => {
     expect(body.get('client_secret')).toBe('client-secret');
     expect(body.get('redirect_uri')).toBe(REDIRECT_URI);
     expect(body.get('grant_type')).toBe('authorization_code');
+  });
 
-    const [userInfoUrl, userInfoInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(userInfoUrl).toBe('https://www.googleapis.com/oauth2/v2/userinfo');
-    expect((userInfoInit.headers as Record<string, string>).Authorization).toBe(
-      'Bearer token-123',
+  it('accepts the bare accounts.google.com issuer', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id_token: await idToken({ iss: 'accounts.google.com', sub: 's' }) }),
     );
+    expect(await exchangeGoogleCode('c', ENV, REDIRECT_URI)).toEqual({ sub: 's' });
   });
 
   it('throws when the token exchange itself fails (invalid/expired code)', async () => {
@@ -55,24 +64,34 @@ describe('exchangeGoogleCode', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('throws when the userinfo call fails', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
-      .mockResolvedValueOnce(jsonResponse({ error: 'invalid_token' }, 401));
-    await expect(exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).rejects.toThrow();
+  it('throws when the response has no id_token', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }));
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow('no id_token');
   });
 
-  it('throws when Google reports the email as unverified', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
-      .mockResolvedValueOnce(jsonResponse({ email: 'admin@example.com', verified_email: false }));
-    await expect(exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).rejects.toThrow();
+  it('throws on a wrong audience', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id_token: await idToken({ aud: 'other-client', sub: 's' }) }),
+    );
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow('audience');
   });
 
-  it('throws when the userinfo response has no email at all', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
-      .mockResolvedValueOnce(jsonResponse({ verified_email: true }));
-    await expect(exchangeGoogleCode('auth-code', ENV, REDIRECT_URI)).rejects.toThrow();
+  it('throws on a wrong issuer', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id_token: await idToken({ iss: 'https://evil.example.com', sub: 's' }) }),
+    );
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow('issuer');
+  });
+
+  it('throws on a missing or empty sub', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id_token: await idToken({}) }));
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow('sub');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id_token: await idToken({ sub: '' }) }));
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow('sub');
+  });
+
+  it('throws on a malformed id_token', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id_token: 'not-a-jwt' }));
+    await expect(exchangeGoogleCode('c', ENV, REDIRECT_URI)).rejects.toThrow();
   });
 });

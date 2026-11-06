@@ -6,6 +6,9 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "ALLOWED_FRONTEND_ORIGINS": "https://health-monitor-new.pages.dev,https://job-tracker-new.pages.dev",
+  },
   "d1_databases": [
     {
       "binding": "JOB_TRACKER_DB",

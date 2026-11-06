@@ -24,6 +24,7 @@ export type Bindings = {
   JWT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  ALLOWED_FRONTEND_ORIGINS: string;
 };
 
 export type Variables = {
