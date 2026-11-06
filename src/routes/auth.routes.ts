@@ -8,6 +8,7 @@ import { requestLogContext } from '../middleware/logging';
 import {
   googleCallbackQuerySchema,
   googleLinkBodySchema,
+  googleLinkCompleteBodySchema,
   googleStartQuerySchema,
   loginSchema,
   registerSchema,
@@ -28,6 +29,7 @@ import {
   type GoogleOAuthEnv,
 } from '../services/google-oauth.service';
 import { isAllowedRedirect, parseAllowedOrigins } from '../utils/frontend-origins';
+import { issueLinkTicket, verifyLinkTicket } from '../utils/link-ticket';
 import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { errorBody } from '../utils/responses';
 import { validationHook } from '../utils/validation';
@@ -165,6 +167,36 @@ authRoutes.post(
   },
 );
 
+// Decision 23: step two of linking. The ticket proves which Google account
+// was consented to and which user started the link; the caller's token proves
+// who is asking now. Linking only when both name the same user is what stops
+// a victim's Google account being attached to an attacker's account. A ticket
+// of another user is reported exactly like an invalid one, so nothing about
+// the ticket leaks.
+authRoutes.post(
+  '/google/link/complete',
+  requireUser,
+  zValidator('json', googleLinkCompleteBodySchema, validationHook),
+  async (c) => {
+    const identity = c.var.identity;
+    if (identity.scope !== 'user') {
+      return c.json(errorBody('Authentication required'), 401);
+    }
+    const ticket = await verifyLinkTicket(c.req.valid('json').ticket, c.env.JWT_SECRET);
+    if (!ticket || ticket.userId !== identity.userId) {
+      return c.json(errorBody('Invalid or expired link ticket'), 400);
+    }
+    const result = await linkGoogle(c.var.authDb, identity.userId, ticket.sub);
+    if (result === 'already_used') {
+      return c.json(errorBody('Google account is already used by another user'), 409);
+    }
+    if (result === 'already_linked') {
+      return c.json(errorBody('Google account is already linked'), 409);
+    }
+    return c.json({ data: result });
+  },
+);
+
 export type GoogleCallbackOutcome = { kind: 'invalid_state' } | { kind: 'redirect'; location: string };
 
 interface GoogleCallbackDeps {
@@ -214,11 +246,12 @@ export async function resolveGoogleCallback(
   try {
     const { sub } = await deps.exchange(query.code, deps.env, deps.redirectUri);
     if (state.intent === 'link') {
-      const linked = await linkGoogle(deps.authDb, state.userId, sub);
-      if (linked === 'already_used') {
-        return to('error=google_already_used');
-      }
-      return to(linked === 'ok' ? 'linked=google' : 'error=google_failed');
+      // Decision 22: no DB write here — the browser completing Google's
+      // consent may not belong to the user who started the link (link CSRF).
+      // The ticket is redeemed by POST /auth/google/link/complete, which
+      // requires that user's own token.
+      const ticket = await issueLinkTicket(deps.env.JWT_SECRET, { userId: state.userId, sub });
+      return to(`link_ticket=${encodeURIComponent(ticket)}`);
     }
     const result = await loginWithGoogle(deps.authDb, sub, deps.env.JWT_SECRET);
     return to(`token=${encodeURIComponent(result.token)}`);

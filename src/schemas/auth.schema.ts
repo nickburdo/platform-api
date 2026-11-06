@@ -31,12 +31,25 @@ export const googleLinkBodySchema = z
   .object({ redirect: z.string('redirect is required') })
   .strict();
 
-// No format rule on login: a malformed username simply fails to match and
-// yields the uniform 401. Strict per V1 Decision #32.
+// POST /auth/google/link/complete: the link ticket from the callback's
+// `#link_ticket=` fragment (Decision 23). Its validity is checked in the route
+// (needs the secret), so an empty or garbage ticket gets the documented 400
+// message, not a schema error.
+export const googleLinkCompleteBodySchema = z
+  .object({ ticket: z.string('ticket is required') })
+  .strict();
+
+// No format rule on the login username: a malformed username simply fails to
+// match and yields the uniform 401. The password keeps the register upper
+// bound (Decision 24), so an oversized body is rejected before hashing.
+// Strict per V1 Decision #32.
 export const loginSchema = z
   .object({
     username: z.string('username is required').min(1, 'username is required'),
-    password: z.string('password is required').min(1, 'password is required'),
+    password: z
+      .string('password is required')
+      .min(1, 'password is required')
+      .max(128, 'password must be at most 128 characters'),
   })
   .strict();
 

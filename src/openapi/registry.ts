@@ -5,6 +5,7 @@ import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema
 import {
   googleCallbackQuerySchema,
   googleLinkBodySchema,
+  googleLinkCompleteBodySchema,
   googleStartQuerySchema,
   loginSchema,
   registerSchema,
@@ -301,6 +302,15 @@ const googleLinkResultSchema = registry.register(
   'GoogleLinkResult',
   z.object({
     url: z.string().url().openapi({ description: "Google's consent URL; navigate the browser to it" }),
+  }),
+);
+
+const googleLinkCompleteRequestSchema = registry.register(
+  'GoogleLinkCompleteRequest',
+  googleLinkCompleteBodySchema.openapi({
+    description:
+      'The link ticket from the callback fragment `#link_ticket=<ticket>` (URL-decoded). Valid for 5 minutes and only for the user who started the link.',
+    example: { ticket: 'eyJhbGciOiJIUzI1NiJ9.eyJwdXJwb3NlIjoiZ29vZ2xlX2xpbmsifQ.signature' },
   }),
 );
 
@@ -770,7 +780,7 @@ registry.registerPath({
   tags: ['Auth'],
   summary: 'Start linking a Google account to the current user',
   description:
-    'POST with a JSON body because a browser navigation cannot carry the Authorization header. The frontend navigates the browser to the returned `url`; the callback then redirects to `<redirect>#linked=google`.',
+    'Step 1 of 2. POST with a JSON body because a browser navigation cannot carry the Authorization header. The frontend navigates the browser to the returned `url`; the callback then redirects to `<redirect>#link_ticket=<ticket>` without linking anything, and the frontend finishes with `POST /auth/google/link/complete`.',
   security: REQUIRED_AUTH,
   request: {
     body: { required: true, content: { 'application/json': { schema: googleLinkRequestSchema } } },
@@ -780,6 +790,34 @@ registry.registerPath({
     400: errorResponse('Validation error, or `redirect must be an allowed frontend URL`'),
     401: WRITE_UNAUTHORIZED,
     409: errorResponse('`Google account is already linked`'),
+    500: INTERNAL_ERROR,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/google/link/complete',
+  operationId: 'completeGoogleLink',
+  tags: ['Auth'],
+  summary: 'Finish linking a Google account with the link ticket',
+  description:
+    'Step 2 of 2. Links the Google account named in the ticket to the caller, only if the caller is the user who started the link. A ticket of another user is rejected exactly like an invalid one.',
+  security: REQUIRED_AUTH,
+  request: {
+    body: {
+      required: true,
+      content: { 'application/json': { schema: googleLinkCompleteRequestSchema } },
+    },
+  },
+  responses: {
+    200: okResponse(publicUserSchema, 'Google account linked; the updated user'),
+    400: errorResponse(
+      'Validation error, or `Invalid or expired link ticket` (malformed, tampered, expired, or issued for another user)',
+    ),
+    401: WRITE_UNAUTHORIZED,
+    409: errorResponse(
+      '`Google account is already used by another user`, or `Google account is already linked`',
+    ),
     500: INTERNAL_ERROR,
   },
 });
@@ -813,13 +851,13 @@ registry.registerPath({
   tags: ['Auth'],
   summary: 'Complete Google Sign-In or account linking',
   description:
-    'Always answers with a redirect to the frontend, carrying the result in the URL fragment: `#token=<jwt>` (sign-in), `#linked=google` (link flow), `#error=access_denied` (user cancelled), `#error=google_failed`, `#error=google_already_used` (link flow, Google account belongs to another user).',
+    'Always answers with a redirect to the frontend, carrying the result in the URL fragment: `#token=<jwt>` (sign-in), `#link_ticket=<ticket>` (link flow — nothing is linked yet; redeem it with `POST /auth/google/link/complete`), `#error=access_denied` (user cancelled), `#error=google_failed`.',
   security: [],
   request: { query: googleCallbackQueryRequestSchema },
   responses: {
     302: {
       description:
-        'Redirect to `<redirect>#token=...`, `#linked=google`, or `#error=access_denied|google_failed|google_already_used`',
+        'Redirect to `<redirect>#token=...`, `#link_ticket=...`, or `#error=access_denied|google_failed`',
     },
     401: errorResponse(
       '`Invalid or expired state` — missing, invalid, expired, or not issued by this server (the redirect target is unknown, so no redirect is made)',

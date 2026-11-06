@@ -206,7 +206,25 @@ Version 4 changes the schema of all three databases and the Worker code together
    ```
 
    All five must return `0`. **If any is non-zero, stop** and decide with the owner what to do with those rows.
-3. **Apply migrations**, in this order:
+3. **Pending-migrations check.** For each database, list what is not yet applied:
+
+   ```bash
+   npx wrangler d1 migrations list auth-db --remote
+   npx wrangler d1 migrations list job-tracker-db --remote
+   npx wrangler d1 migrations list health-monitor-db --remote
+   ```
+
+   Each must show **only its `0001_*` migration** as pending (`0001_username_accounts.sql` for `auth-db`, `0001_user_scope.sql` for the other two). Anything else pending, or `0001_*` already applied, means the cloud state is not what this procedure assumes — **stop** and investigate.
+4. **Record Time Travel bookmarks** — the restore points for a rollback. For each database run:
+
+   ```bash
+   npx wrangler d1 time-travel info auth-db
+   npx wrangler d1 time-travel info job-tracker-db
+   npx wrangler d1 time-travel info health-monitor-db
+   ```
+
+   Copy the three printed bookmarks (and the `time-travel restore` commands Wrangler prints with them) into `plans/v4-plan.md` **before** applying anything. Also note the currently deployed Worker version (Cloudflare Dashboard → Workers → `platform-api` → Deployments), the code `npx wrangler rollback` returns to.
+5. **Apply migrations**, in this order:
 
    ```bash
    npx wrangler d1 migrations apply auth-db --remote
@@ -215,15 +233,30 @@ Version 4 changes the schema of all three databases and the Worker code together
    ```
 
    The `auth-db` migration drops and recreates `users` **without copying rows** — the V2 admin account is removed.
-4. **Deploy immediately:** `npx wrangler deploy`.
-5. **Reseed** the demo rows (re-inserted with `user_id = NULL`): `npm run db:seed`.
-6. **Live verification** (curl or the JetBrains HTTP collection against production):
+6. **Deploy immediately:** `npx wrangler deploy`.
+
+   OAuth `state` values issued by the old Worker do not verify under V4 (the format changed): a Google sign-in that was in flight across the deploy ends with `401 Invalid or expired state` on the callback, and the visitor simply starts again. Nothing needs to be done about it.
+7. **Reseed** the demo rows (re-inserted with `user_id = NULL`): `npm run db:seed`.
+8. **Live verification** (curl or the JetBrains HTTP collection against production):
    - guest `GET /jobs` returns the 17 demo rows; guest `POST /jobs` → `401 Authentication required`;
    - `POST /auth/register` → `201`; that user's `GET /jobs` is empty; create, patch and delete an own job;
    - `/docs` and `/openapi.json` → `200`;
    - `DELETE /auth/me` → `204`, then the old token → `401`.
-7. **Google sign-in (manual).** Open `https://platform-api.nick-burdo.workers.dev/auth/google?redirect=http://localhost:5173/auth/callback` in a browser: it ends on `…#token=…`, and Google's consent screen does not mention email.
-8. Record the deployed Version ID in `plans/v4-plan.md`.
+
+   **Running the `.http` collection against production creates real throwaway accounts** in `auth-db` (`http/auth.http` registers one for `{{token}}` on every run; its own delete-me flow removes only the separate `{{deleteToken}}` account). After the run, delete the leftover accounts with `DELETE /auth/me` using their tokens (the delete-me requests in `auth.http` show how) — that also removes any data they created.
+9. **Google sign-in (manual).** Open `https://platform-api.nick-burdo.workers.dev/auth/google?redirect=http://localhost:5173/auth/callback` in a browser: it ends on `…#token=…`, and Google's consent screen does not mention email.
+10. Record the deployed Version ID in `plans/v4-plan.md` (next to the bookmarks from step 4).
+
+**V4 rollback.** A code rollback alone is not enough: the V3 Worker cannot work on the V4 schema. Roll back **both**, using the bookmarks recorded in step 4:
+
+```bash
+npx wrangler d1 time-travel restore auth-db --bookmark=<auth-db bookmark from step 4>
+npx wrangler d1 time-travel restore job-tracker-db --bookmark=<job-tracker-db bookmark from step 4>
+npx wrangler d1 time-travel restore health-monitor-db --bookmark=<health-monitor-db bookmark from step 4>
+npx wrangler rollback
+```
+
+All three databases must be restored — restoring only some leaves a mix of V3 and V4 schemas. A restore overwrites the database in place (anything written after the bookmark, including accounts registered on V4, is lost) and prints a bookmark that undoes it.
 
 ---
 
@@ -348,7 +381,7 @@ Database
 - [x] Migrations generated (per database)
 - [x] Migrations applied (`--remote`, per database)
 - [x] Seed executed (job-tracker-db, health-monitor-db — `auth-db` has no seed)
-- [ ] Version 4: non-demo row count verified `0`, migrations applied in order (`auth-db`, `job-tracker-db`, `health-monitor-db`), demo rows reseeded
+- [ ] Version 4: non-demo row count verified `0`, only `0001_*` pending in each database (`migrations list --remote`), Time Travel bookmarks of all three databases recorded, migrations applied in order (`auth-db`, `job-tracker-db`, `health-monitor-db`), demo rows reseeded
 
 Secrets
 
@@ -362,7 +395,7 @@ Verification
 - [x] Job Tracker
 - [x] Health Monitor
 - [x] Authentication (Version 2) — login/me/401-semantics/demo-isolation verified against production
-- [ ] Authentication (Version 4) — register/login/me/delete-account, guest `401` on writes, per-user isolation verified against production
+- [ ] Authentication (Version 4) — register/login/me/delete-account, guest `401` on writes, per-user isolation verified against production; throwaway accounts from the `.http` run deleted
 
 ---
 
@@ -385,8 +418,10 @@ Database rollback should be performed carefully.
 
 Preferred approach:
 
-- restore from backup;
+- restore from backup — D1 Time Travel (`npx wrangler d1 time-travel restore <db> --bookmark=<bookmark>`, bookmarks from `npx wrangler d1 time-travel info <db>` taken before the change);
 - or apply a corrective migration.
+
+When a release changes the schema together with the code (as Version 4 does), a database restore and `npx wrangler rollback` must be done together — see "V4 rollback" in the Version 4 Deployment Procedure.
 
 Deleting production data should be avoided.
 

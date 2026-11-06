@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test';
-import { eq } from 'drizzle-orm';
+import { SignJWT } from 'jose';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthDb } from '../db/auth/client';
 import { findUserById } from '../db/auth/users.repository';
@@ -26,6 +26,7 @@ import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
 import { loginWithGoogle, toPublicUser } from '../services/auth.service';
 import { issueToken, verifyToken } from '../utils/jwt';
+import { issueLinkTicket, verifyLinkTicket } from '../utils/link-ticket';
 import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { resolveGoogleCallback } from './auth.routes';
 import { bearer, request, requestJson, seedUserAndGetToken } from './test-helpers';
@@ -172,6 +173,17 @@ describe('POST /auth/login', () => {
   it('rejects a malformed body with 400', async () => {
     const res = await requestJson('POST', '/auth/login', { username: 'nick' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects a password longer than 128 characters with 400 (Decision 24)', async () => {
+    const { username } = await seedUserAndGetToken();
+    const res = await requestJson('POST', '/auth/login', {
+      username,
+      password: 'a'.repeat(129),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(JSON.stringify(body.error)).toContain('password must be at most 128 characters');
   });
 
   it('rejects unknown keys such as a client-supplied role (strict)', async () => {
@@ -455,9 +467,31 @@ describe('account linking', () => {
     return new URL(data.url).searchParams.get('state')!;
   }
 
+  // Runs the callback for a link state and returns the ticket from the
+  // `#link_ticket=` fragment, asserting the exact redirect shape.
+  async function ticketFromCallback(
+    state: string,
+    sub: string,
+    db: Awaited<ReturnType<typeof freshAuthDb>>,
+  ): Promise<string> {
+    const location = await callback(state, sub, db);
+    const [base, fragment] = location.split('#');
+    expect(base).toBe(FRONTEND);
+    expect(fragment).toMatch(/^link_ticket=[^&]+$/);
+    return new URLSearchParams(fragment).get('link_ticket')!;
+  }
+
+  async function complete(token: string | undefined, body: unknown) {
+    return requestJson(
+      'POST',
+      '/auth/google/link/complete',
+      body,
+      token === undefined ? undefined : bearer(token),
+    );
+  }
+
   describe('POST /auth/google/link', () => {
-    it('links Google to a password account; later Google login yields the same account', async () => {
-      const db = await freshAuthDb();
+    it('returns a Google URL whose state carries the link intent and the caller id', async () => {
       const a = await seedUserAndGetToken({ username: 'alice' });
       const res = await startLink(a.token);
       expect(res.status).toBe(200);
@@ -471,47 +505,14 @@ describe('account linking', () => {
         redirect: FRONTEND,
         userId: a.userId,
       });
-
-      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#linked=google`);
-
-      const login = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
-      expect(login.user.id).toBe(a.userId);
-      expect(await db.select().from(users)).toHaveLength(1);
-    });
-
-    it('reports google_already_used when the sub belongs to a Google-only user, changing nobody', async () => {
-      const db = await freshAuthDb();
-      const a = await seedUserAndGetToken({ username: 'alice' });
-      const b = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
-      const state = await stateFromLinkResponse(await startLink(a.token));
-
-      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#error=google_already_used`);
-
-      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
-      expect((await findUserById(db, b.user.id))?.googleSub).toBe('sub-1');
-    });
-
-    it('reports google_failed when the user is deleted or linked meanwhile', async () => {
-      const db = await freshAuthDb();
-      const a = await seedUserAndGetToken({ username: 'alice' });
-      const state = await stateFromLinkResponse(await startLink(a.token));
-      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#linked=google`);
-      // Same state replayed after the account is linked.
-      expect(await callback(state, 'sub-2', db)).toBe(`${FRONTEND}#error=google_failed`);
-      expect((await findUserById(db, a.userId))?.googleSub).toBe('sub-1');
-
-      const c = await seedUserAndGetToken({ username: 'carol' });
-      const stateC = await stateFromLinkResponse(await startLink(c.token));
-      await db.delete(users).where(eq(users.id, c.userId));
-      expect(await callback(stateC, 'sub-3', db)).toBe(`${FRONTEND}#error=google_failed`);
-      expect(await db.select().from(users)).toHaveLength(1);
     });
 
     it('rejects an already linked account with 409', async () => {
       const db = await freshAuthDb();
       const a = await seedUserAndGetToken({ username: 'alice' });
       const state = await stateFromLinkResponse(await startLink(a.token));
-      await callback(state, 'sub-1', db);
+      const ticket = await ticketFromCallback(state, 'sub-1', db);
+      expect((await complete(a.token, { ticket })).status).toBe(200);
       const res = await startLink(a.token);
       expect(res.status).toBe(409);
       expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
@@ -532,6 +533,192 @@ describe('account linking', () => {
       expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
         'redirect must be an allowed frontend URL',
       );
+    });
+  });
+
+  describe('GET /auth/google/callback (link intent)', () => {
+    it('redirects with a verifiable #link_ticket and writes nothing', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const before = await db.select().from(users);
+
+      const ticket = await ticketFromCallback(state, 'sub-1', db);
+
+      expect(await verifyLinkTicket(ticket, env.JWT_SECRET)).toEqual({
+        userId: a.userId,
+        sub: 'sub-1',
+      });
+      expect(await db.select().from(users)).toEqual(before);
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+    });
+
+    it('writes nothing even when the sub already belongs to another user', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const before = await db.select().from(users);
+
+      await ticketFromCallback(state, 'sub-1', db);
+
+      expect(await db.select().from(users)).toEqual(before);
+    });
+
+    it('keeps #error=access_denied and #error=google_failed', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const deps = {
+        authDb: db,
+        env: oauthEnv,
+        redirectUri: REDIRECT_URI,
+        exchange: vi.fn().mockRejectedValue(new Error('exchange failed')),
+        logError,
+      };
+      expect(await resolveGoogleCallback({ state, error: 'access_denied' }, deps)).toEqual({
+        kind: 'redirect',
+        location: `${FRONTEND}#error=access_denied`,
+      });
+      expect(await resolveGoogleCallback({ state, code: 'c' }, deps)).toEqual({
+        kind: 'redirect',
+        location: `${FRONTEND}#error=google_failed`,
+      });
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+    });
+  });
+
+  describe('POST /auth/google/link/complete', () => {
+    it('links for the ticket owner; later Google login yields the same account', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const ticket = await ticketFromCallback(state, 'sub-1', db);
+
+      const res = await complete(a.token, { ticket });
+
+      expect(res.status).toBe(200);
+      const { data } = (await res.json()) as DataEnvelope;
+      expect(data).toMatchObject({ id: a.userId, username: 'alice', hasPassword: true });
+      for (const key of ['passwordHash', 'googleSub']) {
+        expect(data).not.toHaveProperty(key);
+      }
+      expect((await findUserById(db, a.userId))?.googleSub).toBe('sub-1');
+      const login = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+      expect(login.user.id).toBe(a.userId);
+      expect(await db.select().from(users)).toHaveLength(1);
+    });
+
+    it('link CSRF: another user redeeming a valid ticket gets 400 and nothing is linked', async () => {
+      // The attacker starts a link for their own account and gets a victim to
+      // complete Google's consent: the callback issues a ticket for the
+      // attacker's userId with the victim's sub, delivered to the victim's
+      // browser. Redeeming it with the victim's token must fail, and the
+      // callback itself linked nothing.
+      const db = await freshAuthDb();
+      const attacker = await seedUserAndGetToken({ username: 'mallory' });
+      const victim = await seedUserAndGetToken({ username: 'victim' });
+      const state = await stateFromLinkResponse(await startLink(attacker.token));
+      const ticket = await ticketFromCallback(state, 'victim-sub', db);
+
+      const res = await complete(victim.token, { ticket });
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+        'Invalid or expired link ticket',
+      );
+      expect((await findUserById(db, attacker.userId))?.googleSub).toBeNull();
+      expect((await findUserById(db, victim.userId))?.googleSub).toBeNull();
+    });
+
+    it('rejects an expired ticket with 400', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const now = Math.floor(Date.now() / 1000);
+      const expired = await new SignJWT({
+        purpose: 'google_link',
+        userId: a.userId,
+        googleSub: 'sub-1',
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt(now - 400)
+        .setExpirationTime(now - 100)
+        .sign(new TextEncoder().encode(env.JWT_SECRET));
+
+      const res = await complete(a.token, { ticket: expired });
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+        'Invalid or expired link ticket',
+      );
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+    });
+
+    it('rejects a tampered or empty ticket and wrong-purpose tokens with 400', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const ticket = await ticketFromCallback(state, 'sub-1', db);
+      const [header, payload, signature] = ticket.split('.');
+      const tampered = `${header}.${payload}x.${signature}`;
+
+      for (const bad of ['', 'garbage', tampered, a.token, state]) {
+        const res = await complete(a.token, { ticket: bad });
+        expect(res.status).toBe(400);
+        expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+          'Invalid or expired link ticket',
+        );
+      }
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+    });
+
+    it('rejects a sub already owned by another user with 409, changing nobody', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const ticket = await ticketFromCallback(state, 'sub-1', db);
+      const b = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+
+      const res = await complete(a.token, { ticket });
+
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+        'Google account is already used by another user',
+      );
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+      expect((await findUserById(db, b.user.id))?.googleSub).toBe('sub-1');
+    });
+
+    it('rejects a caller that is already linked with 409, keeping the first sub', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      const first = await ticketFromCallback(state, 'sub-1', db);
+      // A second ticket from the same (still valid) state, for another sub.
+      const second = await ticketFromCallback(state, 'sub-2', db);
+      expect((await complete(a.token, { ticket: first })).status).toBe(200);
+
+      for (const ticket of [second, first]) {
+        const res = await complete(a.token, { ticket });
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+          'Google account is already linked',
+        );
+      }
+      expect((await findUserById(db, a.userId))?.googleSub).toBe('sub-1');
+    });
+
+    it('rejects a guest with 401 Authentication required, even with an invalid body', async () => {
+      const res = await complete(undefined, { nope: true });
+      expect(res.status).toBe(401);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Authentication required');
+    });
+
+    it('rejects a missing ticket or unknown keys with 400 (strict)', async () => {
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      expect((await complete(a.token, {})).status).toBe(400);
+      const ticket = await issueLinkTicket(env.JWT_SECRET, { userId: a.userId, sub: 'sub-1' });
+      expect((await complete(a.token, { ticket, userId: a.userId })).status).toBe(400);
     });
   });
 

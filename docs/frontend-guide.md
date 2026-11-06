@@ -87,6 +87,8 @@ This means the token is malformed, expired (tokens live 30 days), or its account
 
 Keep the two `401` messages apart: `Authentication required` means "you are a guest, sign in to write"; `Invalid or expired token` means "your session is gone, sign in again".
 
+**Never send the `Authorization` header to `POST /auth/register` or `POST /auth/login`.** The token check runs on every route, including these two: a stale token sent along would make the API answer `401 Invalid or expired token` instead of registering or logging the visitor in.
+
 ---
 
 # 6. Logout: Discard the Token
@@ -123,43 +125,98 @@ Health Monitor and Job Tracker share one API and one user database. An account r
 
 # 9. Google Sign-In Flow
 
-Google Sign-In is a full-page redirect flow, not a popup and not an API call from JavaScript.
+Google Sign-In is a full-page redirect flow, not a popup and not an API call from JavaScript. Start it in the same tab that will receive the result (the nonce below lives in that tab's `sessionStorage`).
 
-1. **Start.** Link or navigate the browser (a plain `<a href>` or `window.location`) to:
+1. **Create a nonce (mandatory, see point 10).** Generate a random nonce, store it in `sessionStorage`, and put it into your callback page URL as `?n=<nonce>`.
+2. **Start.** Link or navigate the browser (a plain `<a href>` or `window.location`) to:
 
    ```text
-   https://platform-api.nick-burdo.workers.dev/auth/google?redirect=<your own callback page URL>
+   https://platform-api.nick-burdo.workers.dev/auth/google?redirect=<your own callback page URL, including ?n=<nonce>>
    ```
 
    `redirect` must be a page of **your** frontend whose origin is on the API's allowlist (see `connecting-a-frontend.md`). URL-encode it. If it is missing or not allowed the API answers `400` with the message `redirect must be an allowed frontend URL` and does **not** redirect — that is a configuration bug, not something to show to visitors.
-2. **Google.** The visitor consents on Google's screen. No email is requested.
-3. **Return.** The API redirects the browser to `<redirect>#...` — the result is in the URL **fragment**.
-4. **Read the fragment** on your callback page:
+3. **Google.** The visitor consents on Google's screen. No email is requested.
+4. **Return.** The API redirects the browser to `<redirect>#...` — your callback page URL, with its `?n=` intact, and the result in the URL **fragment**.
+5. **Read the fragment** on your callback page:
 
    | Fragment | Meaning |
    |----------|---------|
-   | `#token=<jwt>` | Success — the visitor is signed in. |
-   | `#linked=google` | A Google account was linked to the signed-in account (see "Optional: Linking"). |
+   | `#token=<jwt>` | Success — the visitor is signed in (accept it only if the nonce matches, point 10). |
+   | `#link_ticket=<ticket>` | Linking only: Google consent completed, nothing linked yet — finish with `POST /auth/google/link/complete` (see "Optional: Linking"; nonce rule applies). |
    | `#error=access_denied` | The visitor pressed "Cancel" on Google's screen. |
    | `#error=google_failed` | Google sign-in failed for any other reason. |
-   | `#error=google_already_used` | Linking only: that Google account already belongs to another account. |
 
-5. **Clean the address bar immediately.** After reading the fragment, remove it from the URL so that the token does not stay in the address bar, browser history or a bookmark:
+6. **Clean the address bar immediately.** After reading the fragment (and `?n`), remove both from the URL so that the token does not stay in the address bar, browser history or a bookmark:
 
    ```js
-   history.replaceState(null, '', location.pathname + location.search);
+   history.replaceState(null, '', location.pathname);
    ```
 
-6. **Store the token** (on `#token=`) the same way as a token from `POST /auth/login`, then load the user with `GET /auth/me` and route to the app.
-7. **Map `#error` codes to messages**, for example:
+7. **Check the nonce** (point 10). On a match, **store the token** (on `#token=`) the same way as a token from `POST /auth/login`, then load the user with `GET /auth/me` and route to the app. On a mismatch, discard the token.
+8. **Map `#error` codes to messages**, for example:
    - `access_denied` → "Sign-in was cancelled." (no alarm — the visitor chose this);
    - `google_failed` → "Google sign-in failed. Please try again.";
-   - `google_already_used` → "This Google account is already linked to another account.";
    - any unknown code → the generic failure message.
 
 The first Google sign-in creates an account automatically with a generated username (for example `user-3fa9c1`) and no password. Repeat sign-ins find the same account. Tokens from Google and from password login are identical — the rest of the app does not need to know which was used.
 
-If the callback page is reached with an invalid or expired state, the API answers with `401` JSON (`Invalid or expired state`) on its own address instead of redirecting; this only happens when the visitor waited more than 10 minutes on Google's screen or the link was tampered with. Offering "try again" is enough.
+If the callback page is reached with an invalid or expired state, the API answers with `401` JSON (`Invalid or expired state`) on its own address instead of redirecting; this happens when the visitor waited more than 10 minutes on Google's screen, the link was tampered with, or an API update was deployed while the visitor was on Google's screen. Offering "try again" is enough.
+
+---
+
+# 10. Callback Nonce: Mandatory for Sign-In and Linking
+
+**Every frontend must implement this rule on every Google callback page — sign-in and linking alike.**
+
+Why: the API's signed `state` proves only that the API started the flow, not that **this browser** started it. Anyone can start a Google flow and send the resulting URL to someone else; without this rule, a visitor could be silently signed into somebody else's account (login CSRF), or a link ticket could arrive in a tab that never asked for one. The nonce binds the result to the tab that started the flow.
+
+The rule:
+
+1. **Before** navigating to `GET /auth/google` or calling `POST /auth/google/link`, create a random nonce, store it in `sessionStorage`, and put it into the `redirect` URL as the query parameter `n`.
+2. On the callback page, accept `#token=` or `#link_ticket=` **only if** the `n` query parameter equals the stored nonce.
+3. **Delete** the stored nonce right after reading it, match or not (a nonce is single-use).
+4. On a mismatch, or if no nonce is stored: **discard** the token/ticket, **keep the existing session** unchanged (do not sign out, do not replace the stored token), and show at most a neutral "Sign-in could not be completed, please try again".
+
+`#error=` fragments carry no credentials; showing their message does not depend on the nonce (but the nonce is still deleted).
+
+```js
+const NONCE_KEY = 'googleNonce';
+
+// 1. Before starting sign-in or linking.
+function callbackUrlWithNonce() {
+  const nonce = crypto.randomUUID();
+  sessionStorage.setItem(NONCE_KEY, nonce);
+  const url = new URL('/auth/callback', location.origin);
+  url.searchParams.set('n', nonce);
+  return url.href;
+}
+
+// Sign-in:
+location.href = `${API}/auth/google?redirect=${encodeURIComponent(callbackUrlWithNonce())}`;
+// Linking: POST /auth/google/link with { redirect: callbackUrlWithNonce() }, then go to data.url.
+
+// 2-4. On the callback page (/auth/callback).
+const result = new URLSearchParams(location.hash.slice(1));
+const n = new URLSearchParams(location.search).get('n');
+history.replaceState(null, '', location.pathname); // drop the fragment and ?n
+
+const expected = sessionStorage.getItem(NONCE_KEY);
+sessionStorage.removeItem(NONCE_KEY); // single-use, match or not
+const nonceOk = expected !== null && n === expected;
+
+if (result.has('error')) {
+  showGoogleError(result.get('error')); // point 9, step 8
+} else if (!nonceOk) {
+  // Not started by this tab: ignore the token/ticket, keep the current session.
+  showNotice('Sign-in could not be completed, please try again.');
+} else if (result.has('token')) {
+  saveToken(result.get('token')); // then GET /auth/me
+} else if (result.has('link_ticket')) {
+  await completeGoogleLink(result.get('link_ticket')); // see "Optional: Linking"
+}
+```
+
+`URLSearchParams` URL-decodes the values, so `result.get('token')` and `result.get('link_ticket')` are ready to use as they are.
 
 ---
 
@@ -171,15 +228,15 @@ The user object from `GET /auth/me` contains `hasPassword` (boolean). It tells t
 
 ## Link Google to a Password Account
 
-For a signed-in account that registered with a password and wants to add Google as a second way to sign in.
+For a signed-in account that registered with a password and wants to add Google as a second way to sign in. Linking is **two-step**: Google's consent alone never links anything; the signed-in visitor confirms with their own token afterwards.
 
-1. Send `POST /auth/google/link` with the token and the body `{ "redirect": "<your own callback page URL>" }`. A browser navigation cannot carry the `Authorization` header, which is why this is a `POST` that returns the URL instead of redirecting.
-2. The response is `{ "data": { "url": "https://accounts.google.com/..." } }`. **Navigate the browser to that `url`.**
+1. Create a nonce as in point 10 and send `POST /auth/google/link` with the token and the body `{ "redirect": "<your own callback page URL with ?n=<nonce>>" }`. A browser navigation cannot carry the `Authorization` header, which is why this is a `POST` that returns the URL instead of redirecting.
+2. The response is `{ "data": { "url": "https://accounts.google.com/..." } }`. **Navigate the browser to that `url`** (same tab).
 3. After consent the browser returns to your callback page with a fragment:
-   - `#linked=google` — done; show "Google account linked";
-   - `#error=google_already_used` — that Google account already belongs to a different account (accounts are never merged); show a message and leave the current account unchanged;
+   - `#link_ticket=<ticket>` — Google consent done, **nothing is linked yet**; go to step 5 (after the nonce check);
    - `#error=access_denied` / `#error=google_failed` — as in point 9.
-4. Clean the fragment (`history.replaceState`) as in point 9.
+4. Clean the fragment (`history.replaceState`) and check the nonce as in points 9 and 10. On a nonce mismatch discard the ticket and stop.
+5. Within **5 minutes**, send `POST /auth/google/link/complete` with the **same signed-in account's token** and the body `{ "ticket": "<ticket>" }`. On `200` the response is the updated user — show "Google account linked".
 
 Refusals at step 1:
 
@@ -187,6 +244,15 @@ Refusals at step 1:
 |--------|---------|---------|
 | `409` | `Google account is already linked` | This account already has Google linked — hide or disable the "Link Google" action (there is no unlinking). |
 | `400` | `redirect must be an allowed frontend URL` | Configuration bug (redirect not on the allowlist). |
+| `401` | `Authentication required` / `Invalid or expired token` | Handle as in points 1 and 5. |
+
+Refusals at step 5 (nothing is changed in any of them):
+
+| Status | Message | Meaning |
+|--------|---------|---------|
+| `409` | `Google account is already used by another user` | That Google account already belongs to a different account (accounts are never merged); show a message and leave the current account unchanged. |
+| `409` | `Google account is already linked` | This account got a Google account linked meanwhile (for example in another tab). |
+| `400` | `Invalid or expired link ticket` | The ticket is older than 5 minutes, damaged, or was issued for a different account than the one signed in now (for example, the visitor switched accounts in between). Offer "try again" from step 1. |
 | `401` | `Authentication required` / `Invalid or expired token` | Handle as in points 1 and 5. |
 
 ## Set a Password on a Google-Only Account
@@ -212,8 +278,10 @@ Send `POST /auth/me/password` with the token and the body `{ "password": "<8-128
 | Token invalid, expired or account deleted | `401` | `Invalid or expired token` |
 | Wrong login | `401` | `Invalid credentials` |
 | Username taken (register, set password) | `409` | `Username is already taken` |
-| Google already linked to this account | `409` | `Google account is already linked` |
+| Google already linked to this account (link start or complete) | `409` | `Google account is already linked` |
+| Google account belongs to another user (link complete) | `409` | `Google account is already used by another user` |
+| Link ticket invalid, expired or for another account | `400` | `Invalid or expired link ticket` |
 | Account already has a password | `409` | `Password is already set` |
 | `redirect` not allowed | `400` | `redirect must be an allowed frontend URL` |
 | Invalid or expired Google `state` | `401` | `Invalid or expired state` |
-| Google result in the fragment | `302` | `#token=`, `#linked=google`, `#error=access_denied`, `#error=google_failed`, `#error=google_already_used` |
+| Google result in the fragment | `302` | `#token=`, `#link_ticket=`, `#error=access_denied`, `#error=google_failed` (accept `#token`/`#link_ticket` only with a matching nonce, point 10) |

@@ -8,6 +8,14 @@
 # The delete-me flow at the end registers its own throwaway account ({{deleteToken}})
 # and deletes that one, so {{token}} stays valid for the other files.
 #
+# Google sign-in and linking need a browser (Google's consent screen), so only
+# their HTTP-level paths are covered here: the 302 to Google, the callback
+# fragments (#token=, #link_ticket=) and a successful link completion are not
+# asserted. To finish a link by hand: run "Google link — success", open
+# data.url in a browser, copy the #link_ticket= value from the address bar
+# (URL-decode it), and within 5 minutes send it with the same {{token}} as the
+# body of POST /auth/google/link/complete — the same flow as the requests below.
+#
 ### Register — password too short → 400
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
@@ -281,6 +289,73 @@ client.test('200, data.url on accounts.google.com', function () {
   client.assert(
     response.body.data.url.indexOf('https://accounts.google.com/') === 0,
     'expected a Google consent URL',
+  );
+});
+%}
+
+### Google link complete — guest → 401 (checked before the body)
+POST {{baseUrl}}/auth/google/link/complete
+Content-Type: application/json
+
+{
+  "ticket": "irrelevant"
+}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
+
+### Google link complete — missing ticket → 400 (validation)
+POST {{baseUrl}}/auth/google/link/complete
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{}
+
+> {%
+client.test('400, details.ticket', function () {
+  client.assert(response.status === 400, 'expected 400');
+  client.assert(!!response.body.error.details.ticket, 'expected details.ticket');
+});
+%}
+
+### Google link complete — invalid ticket → 400
+POST {{baseUrl}}/auth/google/link/complete
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "ticket": "not-a-real-ticket"
+}
+
+> {%
+client.test('400, Invalid or expired link ticket', function () {
+  client.assert(response.status === 400, 'expected 400');
+  client.assert(
+    response.body.error.message === 'Invalid or expired link ticket',
+    'expected Invalid or expired link ticket',
+  );
+});
+%}
+
+### Google link complete — an access token is not a ticket → 400
+POST {{baseUrl}}/auth/google/link/complete
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "ticket": "{{token}}"
+}
+
+> {%
+client.test('400, Invalid or expired link ticket', function () {
+  client.assert(response.status === 400, 'expected 400');
+  client.assert(
+    response.body.error.message === 'Invalid or expired link ticket',
+    'expected Invalid or expired link ticket',
   );
 });
 %}

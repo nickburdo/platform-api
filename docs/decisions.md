@@ -592,6 +592,7 @@ Version 3 adds Google OAuth as an alternative login method. Version 2's single-t
 - Google login is matched against the single admin's existing `email` in `auth-db` (case-insensitive exact match). If the Google account's email doesn't match, the login is rejected (`401`) and **no new account is ever created**.
 - `passwordHash` stays required on `users` — the admin account must already exist (via `scripts/create-admin.ts`) before Google login can ever succeed for it. Google is purely an additional login method for that same account, never a Google-only signup path.
 - The OAuth redirect (`GET /auth/google` → `GET /auth/google/callback`) is protected against CSRF via a signed, storageless `state` parameter (a short-lived JWT signed with the existing `JWT_SECRET`, carrying a `purpose: 'oauth_state'` claim) rather than a server-side session — consistent with the stateless architecture ADR-012 established.
+  - **Correction (2026-11-06, superseded by the ADR-014 addendum):** the "protected against CSRF" wording above is wrong. A signed, storageless `state` proves only that this server issued it (and when, and for which redirect); nothing binds it to the browser that started the flow, so it is **not** CSRF protection by itself. The actual mitigations are described in the ADR-014 addendum.
 - The code→token and token→profile exchange with Google uses two raw `fetch` calls, not an OAuth client library — the exchange itself has no cryptography of its own (unlike JWT signing, which justified adding `jose` in V2).
 
 ---
@@ -637,12 +638,12 @@ ADR-012 made the platform single-tenant (one admin, guests read and write demo d
 - **Guests are read-only.** A request without a token sees only demo data (`user_id IS NULL`) and cannot create, update, delete, ignore or restore anything: any write is `401 Authentication required`, raised before body validation.
 - **Anyone can register** with a username (3–32 characters, `[A-Za-z0-9_-]`, unique case-insensitively) and a password (8–128 characters). No email is collected or stored anywhere, so there is no password recovery: a lost password means a lost account, and the frontend warns about it.
 - **Google Sign-In works by Google's stable account id** (OpenID `sub`), with the `openid` scope only — no email is requested. The first Google login creates an account with a generated username (`user-` + 6 hex characters) and no password; repeat logins find it.
-- **Account linking in both directions, no merging.** A password account can link Google (`POST /auth/google/link` returns the Google URL, because a browser navigation cannot carry the `Authorization` header); a Google-only account can set a password (`POST /auth/me/password`). A Google account already linked to another user is refused. No unlinking.
+- **Account linking in both directions, no merging.** A password account can link Google (`POST /auth/google/link` returns the Google URL, because a browser navigation cannot carry the `Authorization` header; the link itself is made in a second step — see the addendum below); a Google-only account can set a password (`POST /auth/me/password`). A Google account already linked to another user is refused. No unlinking.
 - **No roles.** All users are equal; the `ADMIN` role, the admin bootstrap script and the `isDemo` flag are removed.
 - **Per-user data.** Every business row carries a nullable `user_id` (plain text, no foreign key — D1 cannot reference another database); demo rows have `user_id = NULL`. An authenticated user sees and edits only their own rows, never demo rows.
 - **Existence check on every authenticated request.** A valid token of a deleted account is `401 Invalid or expired token`, never a silent fallback to guest.
 - **Account deletion** (`DELETE /auth/me`) removes the business data in both business databases first and the `auth-db` user row last, so a partial failure leaves the account in place and a repeated request finishes the job.
-- **Google redirect goes back to the frontend** with the result in the URL fragment (`#token=`, `#linked=google`, `#error=<code>`). The frontend URL travels inside the signed `state` and must pass an origin allowlist (`ALLOWED_FRONTEND_ORIGINS` plus `localhost` / `127.0.0.1`); adding a frontend is a config change and a deploy, with no Google Console change.
+- **Google redirect goes back to the frontend** with the result in the URL fragment (`#token=`, `#link_ticket=` since the addendum below, `#error=<code>`). The frontend URL travels inside the signed `state` and must pass an origin allowlist (`ALLOWED_FRONTEND_ORIGINS` plus `localhost` / `127.0.0.1`); adding a frontend is a config change and a deploy, with no Google Console change.
 
 ---
 
@@ -664,6 +665,21 @@ ADR-012 made the platform single-tenant (one admin, guests read and write demo d
 - A request racing with account deletion could insert one unreachable row; the window is accepted (no tombstone).
 - Deployment must re-count non-demo rows right before migrating: any such row would otherwise silently become public demo data (see `deployment.md`).
 - Frontend behaviour is specified in `frontend-guide.md`; adding a frontend is described in `connecting-a-frontend.md`.
+
+---
+
+### Addendum (2026-11-06, after the final V4 review): CSRF in the Google flows
+
+**Context.** The signed OAuth `state` proves that this server started a flow, not that the browser arriving at the callback is the one that started it — anyone can start a flow and hand the resulting Google URL to someone else. The first V4 implementation linked Google directly in the callback, to the user id stored in the `state`. An attacker could therefore start a link for **their own** account and get a victim to open the Google URL: the victim's Google account would be attached to the attacker's account permanently, and the attacker could then sign in "with Google" as the victim's Google identity (link CSRF). The sign-in flow has the milder counterpart: a victim can be signed into the attacker's account (login CSRF).
+
+**Decision.**
+
+- **Two-step linking (v4-plan.md Decisions 22–23, spec U17).** The callback for a link `state` never writes to the database. It redirects to `<redirect>#link_ticket=<ticket>`, where the ticket is a 5-minute HS256 JWT with `purpose: 'google_link'`, the user id from the `state` and the Google `sub` (as a `googleSub` claim, never `sub`, so it can never pass as an access token). The frontend then calls `POST /auth/google/link/complete` with its own token and `{ ticket }`; the link is made only when the caller **is** the user named in the ticket. A ticket of another user gets exactly the same `400 Invalid or expired link ticket` as an invalid one. The refusals that used to be callback fragments become `409 Google account is already used by another user` / `409 Google account is already linked` of that endpoint.
+- **Callback nonce (spec U18) — a mandatory frontend rule, documented in `frontend-guide.md`.** Before starting sign-in or linking, the frontend stores a random nonce in `sessionStorage` and puts it into the `redirect` as `?n=<nonce>`; the callback page accepts `#token=` / `#link_ticket=` only when `n` matches, deletes the nonce, and on a mismatch discards the value and keeps the existing session.
+
+**Rationale.** In the link CSRF scenario the ticket names the attacker's account and arrives in the victim's browser: the victim's token cannot redeem it, and the attacker never sees it, so nothing is linked. The API stays stateless (no server-side nonce store). Login CSRF cannot be closed server-side without browser-bound state (a cookie or a session), which the stateless design avoids; the frontend nonce closes it at the only place that knows which tab started the flow.
+
+**Consequences.** Linking needs one more request from the frontend. The protection against login CSRF depends on every frontend applying the nonce rule. A ticket is not single-use, but redeeming it a second time only hits `409 Google account is already linked`.
 
 ---
 

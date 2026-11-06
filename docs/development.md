@@ -76,7 +76,7 @@ which runs `wrangler dev --remote`. The API will be available at:
 http://localhost:8787
 ```
 
-**There is no local database.** The dev server runs against the same two cloud D1 databases as production (`--remote`), so every record you create locally lands in the real cloud data. Since Version 4, records created through the API belong to the registered user who created them (guests cannot write); only the demo records (`user_id IS NULL`) can be reset with `npm run db:seed`, and accounts you register while developing stay in the real `auth-db` until you delete them (`DELETE /auth/me` removes an account with all of its data).
+**There is no local database.** The dev server runs against the same three cloud D1 databases as production (`--remote`), so every record you create locally lands in the real cloud data. Since Version 4, records created through the API belong to the registered user who created them (guests cannot write); only the demo records (`user_id IS NULL`) can be reset with `npm run db:seed`, and accounts you register while developing stay in the real `auth-db` until you delete them (`DELETE /auth/me` removes an account with all of its data).
 
 Note for Windows/PowerShell users: test non-GET requests against the dev server with `curl.exe`, not `Invoke-RestMethod` — the remote-preview proxy consistently answers PowerShell's HTTP client with `503 "worker restarted mid-request"` on POST/PATCH/DELETE.
 
@@ -110,7 +110,7 @@ A comma-separated list of frontend origins (scheme + host + port, no path, no tr
 
 # Project Structure
 
-The project is organized by responsibility. Each of the two databases owns a self-contained folder — schema, client, seed, migrations and repositories live together:
+The project is organized by responsibility. Each of the three databases owns a self-contained folder — schema, client, seed, migrations and repositories live together:
 
 ```text
 src/
@@ -124,12 +124,17 @@ src/
 │   │   ├── seed.sql
 │   │   ├── migrations/
 │   │   └── *.repository.ts
-│   └── health-monitor/
-│       ├── client.ts       Drizzle client for HEALTH_MONITOR_DB
-│       ├── schema.ts
-│       ├── seed.sql
+│   ├── health-monitor/
+│   │   ├── client.ts       Drizzle client for HEALTH_MONITOR_DB
+│   │   ├── schema.ts
+│   │   ├── seed.sql
+│   │   ├── migrations/
+│   │   └── *.repository.ts
+│   └── auth/
+│       ├── client.ts       Drizzle client for AUTH_DB
+│       ├── schema.ts       (no seed: accounts are never seeded)
 │       ├── migrations/
-│       └── *.repository.ts
+│       └── users.repository.ts
 │
 ├── routes/                 One sub-router per resource
 ├── services/               Business logic
@@ -296,7 +301,7 @@ Error:
 
 # Database
 
-The project uses **two independent Cloudflare D1 databases**, accessed through Drizzle ORM:
+The project uses **three independent Cloudflare D1 databases**, accessed through Drizzle ORM:
 
 | Database | Binding | Tables |
 |----------|---------|--------|

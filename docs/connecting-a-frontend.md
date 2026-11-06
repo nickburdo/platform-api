@@ -83,7 +83,7 @@ For example `http://localhost:5173/auth/callback` works out of the box.
 
    You can stop at the Google screen; completing sign-in ends on `https://my-new-app.pages.dev/auth/callback#token=...`.
 
-4. **Implement the frontend side** following `frontend-guide.md` (reading the `#token` / `#error` fragment, cleaning the address bar, error messages).
+4. **Implement the frontend side** following `frontend-guide.md` (the mandatory callback nonce, reading the `#token` / `#link_ticket` / `#error` fragment, cleaning the address bar, error messages).
 
 ---
 

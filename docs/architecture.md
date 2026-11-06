@@ -196,7 +196,7 @@ Each database has its own Drizzle schema, client and migrations directory under 
 
 The application communicates with the databases exclusively through Drizzle ORM.
 
-There is no local database: development, testing against real infrastructure and production all target the same pair of cloud D1 instances (`--remote` everywhere).
+There is no local database: development, testing against real infrastructure and production all target the same three cloud D1 instances (`--remote` everywhere).
 
 ---
 

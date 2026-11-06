@@ -119,11 +119,11 @@ Unknown **query parameters**, by contrast, are ignored.
 | 201    | Resource created                         |
 | 204    | Successful request without response body |
 | 302    | Redirect (Google Sign-In only)           |
-| 400    | Validation error                         |
+| 400    | Validation error (also: disallowed `redirect`, invalid or expired link ticket) |
 | 401    | Unauthorized (guest on a write endpoint, invalid token, wrong credentials) |
 | 403    | Forbidden                                |
 | 404    | Resource not found                       |
-| 409    | Conflict (username taken, Google already linked, password already set) |
+| 409    | Conflict (username taken, Google already linked or used by another user, password already set) |
 | 500    | Internal server error                    |
 
 ---
@@ -187,7 +187,9 @@ Identity resolution on every request:
 }
 ```
 
-A guest calling a write endpoint (or `GET`/`DELETE /auth/me`, `POST /auth/me/password`, `POST /auth/google/link`) receives:
+"Any endpoint" includes `POST /auth/register` and `POST /auth/login`: a request that carries a stale token there also gets this `401` instead of registering or logging in. Clients must therefore **not** send an `Authorization` header to `/auth/register` or `/auth/login` (and should drop a stored token once it gets a `401 Invalid or expired token`).
+
+A guest calling a write endpoint (or `GET`/`DELETE /auth/me`, `POST /auth/me/password`, `POST /auth/google/link`, `POST /auth/google/link/complete`) receives:
 
 ```json
 {
@@ -1142,6 +1144,10 @@ Authenticates a user by username and password and returns an access token. The u
 }
 ```
 
+* `username`, `password`: non-empty strings; `password` at most 128 characters (the register upper bound). No format rule is applied to `username` here — a malformed username simply matches no account and gets the `401` below, not a `400`.
+
+Do not send an `Authorization` header: a stale token gets `401 Invalid or expired token` before the credentials are checked (see Authentication above).
+
 ### Response
 
 ```http
@@ -1152,7 +1158,7 @@ Same shape as `POST /auth/register` (`{ data: { token, user } }`).
 
 ### Errors
 
-Unknown username, wrong password, and a Google-only account (no password) are indistinguishable — all return:
+Unknown username (including a malformed one), wrong password, and a Google-only account (no password) are indistinguishable — all return:
 
 ```http
 401 Unauthorized
@@ -1166,7 +1172,7 @@ Unknown username, wrong password, and a Google-only account (no password) are in
 }
 ```
 
-A structurally invalid body (missing/malformed fields, unknown keys) returns `400` with the standard validation envelope.
+A structurally invalid body (missing or empty fields, a password longer than 128 characters, unknown keys) returns `400` with the standard validation envelope.
 
 ---
 
@@ -1266,7 +1272,7 @@ The requested `username` is taken → `409` `Username is already taken` (nothing
 
 ## POST /auth/google/link
 
-Step 1 of linking a Google account to the signed-in (password) account. Requires a valid token. This is a `POST` with a JSON body because a browser navigation cannot carry the `Authorization` header and a token must never be put into a URL.
+Step 1 of 2 of linking a Google account to the signed-in (password) account. Requires a valid token. This is a `POST` with a JSON body because a browser navigation cannot carry the `Authorization` header and a token must never be put into a URL.
 
 ### Request Body
 
@@ -1292,7 +1298,7 @@ Step 1 of linking a Google account to the signed-in (password) account. Requires
 }
 ```
 
-The frontend navigates the browser to `url`. The signed `state` carries the user id and the link intent. After consent, Google returns to `GET /auth/google/callback`, which attaches the Google account to this user and redirects to `<redirect>#linked=google`.
+The frontend navigates the browser to `url`. The signed `state` carries the user id and the link intent. After consent, Google returns to `GET /auth/google/callback`, which **does not link anything**: it redirects to `<redirect>#link_ticket=<ticket>`, and the frontend finishes with step 2, `POST /auth/google/link/complete`. (The browser that completes Google's consent may not belong to the user who started the link — an attacker can hand a victim their own link URL — so the link is made only when the started-by user redeems the ticket with their own token. See ADR-014.)
 
 ### Errors
 
@@ -1308,7 +1314,69 @@ The account already has a Google account linked → `409`:
 
 A `redirect` that fails the allowlist → `400` `redirect must be an allowed frontend URL`. No token (guest) → `401` `Authentication required`; invalid or expired token → `401` `Invalid or expired token`.
 
-If the Google account is already linked to a different user, the failure surfaces at the callback as `#error=google_already_used` (accounts are never merged). There is no unlinking.
+If the Google account is already linked to a different user, the failure surfaces at step 2 as `409 Google account is already used by another user` (accounts are never merged). There is no unlinking.
+
+---
+
+## POST /auth/google/link/complete
+
+Step 2 of 2 of linking a Google account. Requires a valid token — the token of the same user who called `POST /auth/google/link`.
+
+### Request Body
+
+```json
+{
+  "ticket": "<link ticket>"
+}
+```
+
+* `ticket`: the value of `#link_ticket=` from the callback redirect, URL-decoded (`URLSearchParams` does this). A ticket is valid for **5 minutes** and only for the user who started the link. Unknown keys → `400`.
+
+### Response
+
+```http
+200 OK
+```
+
+```json
+{
+  "data": {
+    "id": "5b1c9a52-0e7a-4a43-9e8b-2d1a7f6c3e10",
+    "username": "nick",
+    "hasPassword": true,
+    "createdAt": "2026-11-06T10:00:00.000Z",
+    "updatedAt": "2026-11-06T10:05:00.000Z"
+  }
+}
+```
+
+The updated user. From now on, Google sign-in with that Google account signs into this account.
+
+### Errors
+
+The ticket is malformed, tampered, expired, not a link ticket, **or was issued for a different user than the caller** → `400`. These cases are deliberately indistinguishable:
+
+```json
+{
+  "error": {
+    "message": "Invalid or expired link ticket"
+  }
+}
+```
+
+The Google account already belongs to another user → `409`:
+
+```json
+{
+  "error": {
+    "message": "Google account is already used by another user"
+  }
+}
+```
+
+The caller already has a Google account linked (for example, a second ticket redeemed after the first) → `409` `Google account is already linked`.
+
+Missing `ticket` or unknown keys → `400` with the standard validation envelope. No token (guest) → `401` `Authentication required` (checked before the body); invalid or expired token → `401` `Invalid or expired token`. Nothing is changed on any error.
 
 ---
 
@@ -1358,16 +1426,17 @@ The first Google sign-in with an unknown Google account creates a user with a ge
 | Outcome                              | Redirect                                |
 | ------------------------------------ | --------------------------------------- |
 | Sign-in succeeded                    | `<redirect>#token=<jwt>`                |
-| Account linked (`link` flow)         | `<redirect>#linked=google`              |
+| Google consent completed (`link` flow) — nothing is linked yet; redeem the ticket with `POST /auth/google/link/complete` | `<redirect>#link_ticket=<ticket>` (URL-encoded) |
 | User cancelled on Google's screen    | `<redirect>#error=access_denied`        |
-| Any other failure after a valid `state` (no `code`, code exchange failed, Google account unusable, link target changed) | `<redirect>#error=google_failed` |
-| Google account already belongs to another user (`link` flow) | `<redirect>#error=google_already_used` |
+| Any other failure after a valid `state` (no `code`, code exchange failed, Google account unusable) | `<redirect>#error=google_failed` |
 
 The token is identical in shape (claims, expiry) to one issued by `POST /auth/login` — callers cannot tell which method was used.
 
+The signed `state` proves only that this server started the flow; it does not prove that the browser arriving here is the one that started it. Frontends must therefore apply the nonce rule in `frontend-guide.md` before accepting `#token=` or `#link_ticket=`.
+
 ### Errors
 
-`state` missing, invalid, expired, or not issued by this server → `401` JSON (the redirect target is unknown, so there is nobody to redirect to), before any call to Google is made:
+`state` missing, invalid, expired, or not issued by this server (this includes a state issued before a deploy that changed its format — the user simply starts again) → `401` JSON (the redirect target is unknown, so there is nobody to redirect to), before any call to Google is made:
 
 ```json
 {

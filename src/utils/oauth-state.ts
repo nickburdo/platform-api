@@ -1,8 +1,19 @@
 import { SignJWT, jwtVerify } from 'jose';
 
-// CSRF protection for GET /auth/google's redirect (v3-plan.md Decision #8):
-// a signed, storageless `state` — a short-lived JWT distinguished from a real
-// access token by its `purpose` claim, not by a different signing key.
+// The OAuth `state` for GET /auth/google and POST /auth/google/link
+// (v3-plan.md Decision #8): a signed, storageless, short-lived JWT
+// distinguished from an access token and from a link ticket by its `purpose`
+// claim, not by a different signing key.
+//
+// What it proves: that this server issued the state (for this redirect and
+// intent) within the last 10 minutes. What it does NOT prove: that the browser
+// arriving at the callback is the one that started the flow — nothing binds
+// the state to a browser, so an attacker can start a flow and hand the
+// resulting URL to a victim. It is therefore not CSRF protection by itself
+// (this corrects the original V3 wording). The mitigations are the two-step
+// link flow (Decision 22: the callback never links, it only hands out a link
+// ticket) and the frontend nonce rule (spec U18) for sign-in and link
+// callback pages.
 
 export const STATE_TTL = '10m';
 const STATE_PURPOSE = 'oauth_state';
@@ -12,7 +23,8 @@ function secretKey(secret: string): Uint8Array {
 }
 
 // Decision 19: a login state carries only the redirect; a link state also
-// carries the id of the user who started the link.
+// carries the id of the user who started the link (copied into the link
+// ticket, Decision 22).
 export type OAuthStateClaims =
   | { intent: 'login'; redirect: string }
   | { intent: 'link'; redirect: string; userId: string };
@@ -26,10 +38,9 @@ export async function issueOAuthState(secret: string, claims: OAuthStateClaims):
     ...claims,
     // Not verified by verifyOAuthState below — Decision #8's storageless
     // design has nothing to check it against (no server-side nonce
-    // tracking), so it provides no replay protection by itself. CSRF
-    // protection comes entirely from the signature + short expiry +
-    // `purpose` claim. Kept only so two states issued within the same
-    // second (same `iat`) aren't byte-identical tokens.
+    // tracking), so it provides no replay protection and no browser
+    // binding. Kept only so two states issued within the same second (same
+    // `iat`) aren't byte-identical tokens.
     nonce: crypto.randomUUID(),
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -39,9 +50,13 @@ export async function issueOAuthState(secret: string, claims: OAuthStateClaims):
 }
 
 // Returns the claims of a valid, unexpired state issued by this server for
-// this exact purpose, or null on any failure (bad signature, malformed,
-// expired, wrong `purpose`, missing `redirect`) — the caller rejects before
-// calling Google.
+// this exact purpose, or null on any failure — the caller rejects before
+// calling Google. Null reasons: bad signature (including any state signed
+// before a JWT_SECRET rotation), malformed, expired (older than 10 minutes),
+// wrong `purpose` (an access token or a link ticket), missing `redirect`,
+// unknown or missing `intent`, a `link` intent without a non-empty `userId`,
+// and any pre-V4 state (it has neither `redirect` nor `intent`), so a Google
+// sign-in in flight across the V4 deploy fails with 401 and must be retried.
 export async function verifyOAuthState(
   token: string,
   secret: string,

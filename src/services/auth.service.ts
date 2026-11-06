@@ -161,20 +161,24 @@ export async function startGoogleLink(
   return user.googleSub === null ? 'ok' : 'already_linked';
 }
 
-// Decision 19: runs at callback time, up to 10 minutes after the state was
-// issued, so everything is re-checked. 'already_used' = the sub belongs to
-// another account; 'failed' = the user is gone or already linked.
+// Decision 23: runs in POST /auth/google/link/complete, after the route has
+// verified the link ticket and that it belongs to the caller. Up to 5 minutes
+// may have passed since the Google consent, so everything is re-checked.
+// 'already_used' = the sub belongs to another account; 'already_linked' = the
+// caller already has a Google account (or no longer exists).
 export async function linkGoogle(
   db: AuthDb,
   userId: string,
   googleSub: string,
-): Promise<'ok' | 'already_used' | 'failed'> {
+): Promise<PublicUser | 'already_used' | 'already_linked'> {
   const owner = await findUserByGoogleSub(db, googleSub);
   if (owner) {
-    return owner.id === userId ? 'failed' : 'already_used';
+    return owner.id === userId ? 'already_linked' : 'already_used';
   }
   try {
-    return (await setGoogleSub(db, userId, googleSub)) ? 'ok' : 'failed';
+    if (!(await setGoogleSub(db, userId, googleSub))) {
+      return 'already_linked';
+    }
   } catch (err) {
     if (!isUniqueViolation(err)) {
       throw err;
@@ -182,8 +186,10 @@ export async function linkGoogle(
     // Race: another account claimed the sub after the check above. The only
     // unique index touched by setGoogleSub is google_sub.
     const winner = await findUserByGoogleSub(db, googleSub);
-    return winner && winner.id !== userId ? 'already_used' : 'failed';
+    return winner && winner.id !== userId ? 'already_used' : 'already_linked';
   }
+  const user = await findUserById(db, userId);
+  return user ? toPublicUser(user) : 'already_linked';
 }
 
 // Decision 21. Returns the updated public user, or a reason.

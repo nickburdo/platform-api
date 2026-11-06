@@ -155,9 +155,11 @@ describe('loginWithGoogle', () => {
 });
 
 describe('linkGoogle', () => {
-  it('links a sub to a user without one', async () => {
+  it('links a sub to a user without one and returns the public user', async () => {
     await seedUser();
-    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('ok');
+    const result = await linkGoogle(db, 'user-1', 'sub-1');
+    expect(result).toMatchObject({ id: 'user-1', hasPassword: true });
+    expect(result).not.toHaveProperty('googleSub');
     expect((await findUserById(db, 'user-1'))?.googleSub).toBe('sub-1');
   });
 
@@ -169,12 +171,12 @@ describe('linkGoogle', () => {
     expect((await findUserById(db, other.user.id))?.googleSub).toBe('sub-1');
   });
 
-  it('returns failed when the user is gone or already linked', async () => {
-    expect(await linkGoogle(db, 'missing', 'sub-1')).toBe('failed');
+  it('returns already_linked when the user is gone or already linked', async () => {
+    expect(await linkGoogle(db, 'missing', 'sub-1')).toBe('already_linked');
     await seedUser();
     await linkGoogle(db, 'user-1', 'sub-1');
-    expect(await linkGoogle(db, 'user-1', 'sub-2')).toBe('failed');
-    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('failed');
+    expect(await linkGoogle(db, 'user-1', 'sub-2')).toBe('already_linked');
+    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('already_linked');
     expect((await findUserById(db, 'user-1'))?.googleSub).toBe('sub-1');
   });
 });
