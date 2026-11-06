@@ -8,7 +8,7 @@
 
 **V1** (Job Tracker + Health Monitor, без авторизации), **V2** (аутентификация, single-tenant, JWT) и **V3** (Google Sign-In, OpenAPI, Swagger UI, DX-улучшения, мониторинг) — **все три версии полностью реализованы, задеплоены, покрыты тестами, прошли code review**. Прод: https://platform-api.nick-burdo.workers.dev.
 
-Текущий прод: **Version ID `e08b5dd4-93b0-4796-9814-fda3a156896c`**, коммит `1a126de`. Документация синхронизирована коммитом `56053c0`.
+Текущий прод: **Version ID `e08b5dd4-93b0-4796-9814-fda3a156896c`**, коммит `89b8f72`. Документация синхронизирована коммитом `bd69e7f`.
 
 Активного v4-плана нет — `docs/roadmap.md`'s "Future Versions" содержит только нереализованный бэклог идей (PostgreSQL, Redis, Cloudflare Queues/R2, background jobs, full-text search, rate limiting, API versioning, webhooks, audit log), которые "should only be implemented when justified by real requirements" — ничего из этого не запланировано и не обсуждалось.
 

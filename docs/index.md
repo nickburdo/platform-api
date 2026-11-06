@@ -18,7 +18,14 @@ docs/
 ├── api.md
 ├── development.md
 ├── deployment.md
-└── decisions.md
+├── decisions.md
+├── google-console.md
+├── summary.md
+├── plans/
+│   ├── v1-plan.md
+│   ├── v2-plan.md
+│   └── v3-plan.md
+└── seed/
 ```
 
 ---
@@ -167,6 +174,39 @@ Read this document to understand why the project is designed the way it is.
 
 ---
 
+## plans/
+
+One implementation plan per version (`v1-plan.md`, `v2-plan.md`, `v3-plan.md`).
+
+Each plan contains:
+
+* approval / completion status;
+* numbered decision log;
+* section-by-section task checklists;
+* definition of done.
+
+Read the plan of a version to understand how and why it was implemented.
+
+---
+
+## google-console.md
+
+Step-by-step guide (in Russian) for the one-time Google Cloud Console setup required by Google Sign-In (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`).
+
+---
+
+## summary.md
+
+Session hand-off summary (in Russian): current project status, what was done in the latest version, and the development process to follow when resuming work.
+
+---
+
+## seed/
+
+Original Prisma schemas and seed fixtures used as the source for the demo data (`isDemo = true`).
+
+---
+
 # Development Workflow
 
 Every feature should follow this sequence:
@@ -231,6 +271,7 @@ Each aspect of the project has a single authoritative document.
 | Development             | `development.md`  |
 | Deployment              | `deployment.md`   |
 | Architectural Decisions | `decisions.md`    |
+| Version Plans           | `plans/`          |
 
 Avoid documenting the same information in multiple places.
 

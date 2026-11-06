@@ -124,7 +124,10 @@ docs/
 ├── development.md
 ├── deployment.md
 ├── decisions.md
-└── plans/           one implementation plan per version, with decision log
+├── google-console.md  Google Cloud Console setup for Google Sign-In
+├── summary.md       current status / session hand-off summary
+├── plans/           one implementation plan per version, with decision log
+└── seed/            original fixtures used for demo data
 ```
 
 ---
@@ -145,15 +148,17 @@ Version 1
 
 Version 2
 
-- Authentication
+- Authentication (single admin account, closed registration)
 - JWT
-- Roles
+- Guest / admin data scoping (`isDemo`)
 
 Version 3
 
 - Google Login
 - OpenAPI
 - Swagger UI
+- Improved validation errors
+- Monitoring (structured logs, `X-Request-Id`)
 
 See:
 

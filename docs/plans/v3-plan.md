@@ -1,6 +1,6 @@
 # Version 3 — Implementation Plan
 
-> Status: **Approved** (2026-07-01)
+> Status: **Complete** (2026-07-03) — deployed to production. Originally approved 2026-07-01.
 > Depends on: Version 2 (`v2-plan.md`, Approved 2026-07-01)
 >
 > Source of truth for scope: `../roadmap.md`
@@ -154,7 +154,7 @@ Code review (8-angle, high effort) run against the Section 5 diff: 2 findings co
 
 # 7. Documentation Updates Required
 
-- [ ] `api.md` — Google auth endpoints (including the "no matching account → rejected" behavior), expanded examples, error cases
+- [x] `api.md` — Google auth endpoints (including the "no matching account → rejected" behavior), expanded examples, error cases — written during the Section 1 doc-first pass and the Section 4 DX pass (`GET /auth/google`, `GET /auth/google/callback`, per-resource `### Errors`)
 - [x] `decisions.md` — ADR-011 status updated from "Planned" to "Accepted" (OpenAPI generation is implemented and lint-clean); ADR-013 ("Google login as an additional method for the single admin account, no new-account creation") already existed from the Section 1 doc-first pass — no new ADR needed
 - [x] `deployment.md` — monitoring dashboard access instructions and the three-database note were already written doc-first (Decision #13); verified accurate against the implemented behavior, no changes needed
 - [x] `roadmap.md` — Version 3's checklist already named the single-tenant constraint (ADR-013) and never claimed API versioning; added a one-line note on the no-version-prefix decision (Decision #5) and checked off all now-completed Version 3 tasks
@@ -171,4 +171,4 @@ Adjusted from `roadmap.md`'s original wording to match the single-tenant design:
 - [x] Documentation is synchronized (Section 7)
 - [x] Production monitoring is configured across all three databases
 
-**Version 3 complete.** Deployed to production, Version ID `e08b5dd4-93b0-4796-9814-fda3a156896c`, commit `1a126de`.
+**Version 3 complete.** Deployed to production, Version ID `e08b5dd4-93b0-4796-9814-fda3a156896c`, commit `89b8f72`.

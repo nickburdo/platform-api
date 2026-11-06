@@ -88,7 +88,7 @@ Reference: `models.md`
   ```
 - [x] Script validates password strength before hashing (minimum 12 characters)
 - [x] Script never prints the password (hashed or plaintext) to stdout/logs
-- [ ] Actually run against the cloud `auth-db` (deferred to pre-deployment verification, after routes exist to log in against)
+- [x] Actually run against the cloud `auth-db` (deferred to pre-deployment verification, after routes exist to log in against) — done by the user at deployment; confirmed via production login (Section 9)
 
 ---
 
@@ -96,7 +96,7 @@ Reference: `models.md`
 
 - [x] `utils/password.ts` — `hashPassword` / `verifyPassword` using Web Crypto PBKDF2 per Decisions #6/#12 (100k iterations, self-describing stored format, constant-time compare) — 5 unit tests
 - [x] `utils/jwt.ts` — `issueToken` / `verifyToken` using `jose`, `HS256`, 30-day expiry, claims `sub`/`role`/`iat`/`exp` — 5 unit tests
-- [ ] Store `JWT_SECRET` via `wrangler secret put JWT_SECRET` (per `deployment.md`) — never committed (deferred to deployment)
+- [x] Store `JWT_SECRET` via `wrangler secret put JWT_SECRET` (per `deployment.md`) — never committed (deferred to deployment) — set during the Section 10 deployment (see Section 8 security checklist)
 - [x] Local dev: `JWT_SECRET` set via `.dev.vars` (gitignored, random value generated; `.dev.vars.example` committed; `.gitignore` gained `!.dev.vars.example`) — per V1 Decision #12, `wrangler dev --remote` still targets the real cloud databases, only the secret itself is local-only. Test runs get `TEST_AUTH_MIGRATIONS` + a dummy `JWT_SECRET` via miniflare bindings; note: the Workers pool also reports "Using secrets defined in .dev.vars" — verify which `JWT_SECRET` wins when the first test actually reads it (Section 9)
 
 ---

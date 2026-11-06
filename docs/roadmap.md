@@ -61,12 +61,12 @@ Reference:
 
 Tasks:
 
-- [ ] Create Cloudflare Worker
-- [ ] Configure Wrangler
-- [ ] Create D1 database
-- [ ] Configure Drizzle ORM
-- [ ] Configure Zod
-- [ ] Configure project structure
+- [x] Create Cloudflare Worker
+- [x] Configure Wrangler
+- [x] Create D1 database
+- [x] Configure Drizzle ORM
+- [x] Configure Zod
+- [x] Configure project structure
 
 ---
 
@@ -78,10 +78,10 @@ Reference:
 
 Tasks:
 
-- [ ] Implement Job Tracker models
-- [ ] Implement Health Monitor models
-- [ ] Add `isDemo` support
-- [ ] Implement ignored records
+- [x] Implement Job Tracker models
+- [x] Implement Health Monitor models
+- [x] Add `isDemo` support
+- [x] Implement ignored records
 
 ---
 
@@ -93,19 +93,19 @@ Reference:
 
 ### Job Tracker
 
-- [ ] GET /jobs
-- [ ] GET /jobs/:id
-- [ ] POST /jobs
-- [ ] PATCH /jobs/:id
-- [ ] DELETE /jobs/:id
-- [ ] GET /jobs/meta
+- [x] GET /jobs
+- [x] GET /jobs/:id
+- [x] POST /jobs
+- [x] PATCH /jobs/:id
+- [x] DELETE /jobs/:id
+- [x] GET /jobs/meta
 
 Features:
 
-- [ ] Pagination
-- [ ] Company filter
-- [ ] Status filter
-- [ ] Full-text search
+- [x] Pagination
+- [x] Company filter
+- [x] Status filter
+- [x] Full-text search — implemented as substring `LIKE` search over `company`/`position`/`source`/`notes` (`plans/v1-plan.md` Decision #4); true FTS remains a Future Versions item
 
 ---
 
@@ -113,22 +113,22 @@ Features:
 
 Implement resources:
 
-- [ ] Dashboard
-- [ ] Glucose
-- [ ] Blood Pressure
-- [ ] Weight
-- [ ] Symptoms
+- [x] Dashboard
+- [x] Glucose
+- [x] Blood Pressure
+- [x] Weight
+- [x] Symptoms
 
 Each resource should support:
 
-- [ ] GET
-- [ ] POST
-- [ ] PATCH
+- [x] GET
+- [x] POST
+- [x] PATCH
 
 Features:
 
-- [ ] Date filtering
-- [ ] Ignore / Restore
+- [x] Date filtering
+- [x] Ignore / Restore
 
 ---
 
@@ -140,10 +140,10 @@ Reference:
 
 Tasks:
 
-- [ ] Create Zod schemas
-- [ ] Validate body
-- [ ] Validate query
-- [ ] Validate path parameters
+- [x] Create Zod schemas
+- [x] Validate body
+- [x] Validate query
+- [x] Validate path parameters
 
 ---
 
@@ -155,9 +155,9 @@ Reference:
 
 Tasks:
 
-- [ ] Create Job Tracker demo data
-- [ ] Create Health Monitor demo data
-- [ ] Use `isDemo = true`
+- [x] Create Job Tracker demo data
+- [x] Create Health Monitor demo data
+- [x] Use `isDemo = true`
 
 ---
 
@@ -169,10 +169,10 @@ Reference:
 
 Tasks:
 
-- [ ] Configure production deployment
-- [ ] Configure migrations
-- [ ] Configure seed
-- [ ] Verify deployment
+- [x] Configure production deployment
+- [x] Configure migrations
+- [x] Configure seed
+- [x] Verify deployment
 
 ---
 
@@ -180,11 +180,11 @@ Tasks:
 
 Tasks:
 
-- [ ] Create Postman collection
-- [ ] Verify all endpoints
-- [ ] Verify pagination
-- [ ] Verify filtering
-- [ ] Verify demo data
+- [x] Create Postman collection — replaced by a JetBrains HTTP Client collection in `http/` (`plans/v1-plan.md` Decision #38)
+- [x] Verify all endpoints
+- [x] Verify pagination
+- [x] Verify filtering
+- [x] Verify demo data
 
 ---
 
@@ -192,13 +192,13 @@ Tasks:
 
 Version 1 is complete when:
 
-- [ ] API matches `api.md`
-- [ ] Models match `models.md`
-- [ ] CRUD is implemented
-- [ ] Validation is implemented
-- [ ] Seed is available
-- [ ] Deployment works
-- [ ] Documentation is updated
+- [x] API matches `api.md`
+- [x] Models match `models.md`
+- [x] CRUD is implemented
+- [x] Validation is implemented
+- [x] Seed is available
+- [x] Deployment works
+- [x] Documentation is updated
 
 ---
 
@@ -225,13 +225,13 @@ Reference:
 
 Tasks:
 
-- [ ] Create `User` model (single admin row, own `auth-db` database)
-- [ ] Create users table
-- [ ] Hash passwords (salted PBKDF2 via WebCrypto)
-- [ ] Admin bootstrap script (`scripts/create-admin.ts`) — registration is closed, no public register endpoint
-- [ ] Implement login
-- [ ] Generate JWT access tokens (30-day expiry)
-- [ ] Validate JWT (signature + expiration)
+- [x] Create `User` model (single admin row, own `auth-db` database)
+- [x] Create users table
+- [x] Hash passwords (salted PBKDF2 via WebCrypto)
+- [x] Admin bootstrap script (`scripts/create-admin.ts`) — registration is closed, no public register endpoint
+- [x] Implement login
+- [x] Generate JWT access tokens (30-day expiry)
+- [x] Validate JWT (signature + expiration)
 
 Logout is client-side only (discard the token) — no server-side revocation.
 
@@ -247,8 +247,8 @@ There is exactly one non-guest role (`ADMIN`), so "authenticated" and "is admin"
 
 Tasks:
 
-- [ ] Identity-resolution middleware: no header → guest; valid token → admin; presented-but-invalid/expired token → `401` (never a silent guest fallback)
-- [ ] `GET /auth/me` requires a valid admin token (`401` otherwise)
+- [x] Identity-resolution middleware: no header → guest; valid token → admin; presented-but-invalid/expired token → `401` (never a silent guest fallback)
+- [x] `GET /auth/me` requires a valid admin token (`401` otherwise)
 
 ---
 
@@ -261,10 +261,10 @@ Reference:
 
 Tasks:
 
-- [ ] Guests (no token) read and create only demo records
-- [ ] Admin (valid token) reads and creates only real records
-- [ ] By-id operations are scope-filtered: a record outside the caller's scope returns `404`
-- [ ] Server manages `isDemo`
+- [x] Guests (no token) read and create only demo records
+- [x] Admin (valid token) reads and creates only real records
+- [x] By-id operations are scope-filtered: a record outside the caller's scope returns `404`
+- [x] Server manages `isDemo`
 
 The client must never send:
 
@@ -278,8 +278,8 @@ isDemo
 
 Tasks:
 
-- [ ] GET /auth/me
-- [ ] Login
+- [x] GET /auth/me
+- [x] Login
 
 Registration is closed (bootstrap script instead). Future endpoints such as password reset are intentionally postponed.
 
@@ -289,10 +289,10 @@ Registration is closed (bootstrap script instead). Future endpoints such as pass
 
 Tasks:
 
-- [ ] Validate JWT expiration on every presented token
-- [ ] Secure password hashing (salted PBKDF2, documented parameters)
-- [ ] Secure secret storage (`wrangler secret` for `JWT_SECRET`, `.dev.vars` locally)
-- [ ] Uniform `401 Invalid credentials` for wrong email and wrong password alike
+- [x] Validate JWT expiration on every presented token
+- [x] Secure password hashing (salted PBKDF2, documented parameters)
+- [x] Secure secret storage (`wrangler secret` for `JWT_SECRET`, `.dev.vars` locally)
+- [x] Uniform `401 Invalid credentials` for wrong email and wrong password alike
 
 ---
 
@@ -300,12 +300,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Bootstrap script creates/rotates the admin without duplicating rows
-- [ ] Login (correct and wrong credentials)
-- [ ] Verify JWT (valid / expired / malformed / missing)
-- [ ] Verify guest scoping (reads, creates, by-id `404` for real records)
-- [ ] Verify admin scoping (reads, creates, by-id `404` for demo records)
-- [ ] Full V1 regression with and without a token
+- [x] Bootstrap script creates/rotates the admin without duplicating rows
+- [x] Login (correct and wrong credentials)
+- [x] Verify JWT (valid / expired / malformed / missing)
+- [x] Verify guest scoping (reads, creates, by-id `404` for real records)
+- [x] Verify admin scoping (reads, creates, by-id `404` for demo records)
+- [x] Full V1 regression with and without a token
 
 ---
 
@@ -313,12 +313,12 @@ Tasks:
 
 Version 2 is complete when:
 
-- [ ] Login works; the admin receives a valid JWT
-- [ ] `GET /auth/me` works
-- [ ] No-token requests behave exactly as V1 (demo-scoped)
-- [ ] Admin requests are scoped to real data
-- [ ] Invalid/expired tokens are rejected with `401`
-- [ ] Documentation is updated
+- [x] Login works; the admin receives a valid JWT
+- [x] `GET /auth/me` works
+- [x] No-token requests behave exactly as V1 (demo-scoped)
+- [x] Admin requests are scoped to real data
+- [x] Invalid/expired tokens are rejected with `401`
+- [x] Documentation is updated
 
 ---
 
