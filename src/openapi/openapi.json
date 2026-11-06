@@ -21,7 +21,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Optional on most endpoints: absent -> guest, scoped to demo data; present and valid -> admin, scoped to real data. A present-but-invalid token always 401s (never silently downgraded to guest). Required in practice for GET /auth/me."
+        "description": "Reads: optional — absent -> guest (read-only demo data); present and valid -> the caller's own data. Writes (POST/PATCH/DELETE) and the /auth/me routes require a valid token; a guest gets 401 `Authentication required` before body validation. A present-but-invalid token always 401s `Invalid or expired token` (never silently downgraded to guest)."
       }
     },
     "schemas": {
@@ -192,9 +192,6 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
-          },
-          "isDemo": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -213,8 +210,7 @@
           "appliedAt",
           "nextFollowUpAt",
           "createdAt",
-          "updatedAt",
-          "isDemo"
+          "updatedAt"
         ]
       },
       "JobsStats": {
@@ -314,9 +310,6 @@
             "type": "string",
             "nullable": true
           },
-          "isDemo": {
-            "type": "boolean"
-          },
           "measuredAt": {
             "type": "string",
             "format": "date-time"
@@ -337,7 +330,6 @@
           "note",
           "ignored",
           "reason",
-          "isDemo",
           "measuredAt",
           "fastingValue",
           "afterMealValue"
@@ -369,9 +361,6 @@
             "type": "string",
             "nullable": true
           },
-          "isDemo": {
-            "type": "boolean"
-          },
           "measuredAt": {
             "type": "string",
             "format": "date-time"
@@ -393,7 +382,6 @@
           "note",
           "ignored",
           "reason",
-          "isDemo",
           "measuredAt",
           "systolic",
           "diastolic",
@@ -426,9 +414,6 @@
             "type": "string",
             "nullable": true
           },
-          "isDemo": {
-            "type": "boolean"
-          },
           "measuredAt": {
             "type": "string",
             "format": "date-time"
@@ -444,7 +429,6 @@
           "note",
           "ignored",
           "reason",
-          "isDemo",
           "measuredAt",
           "value"
         ]
@@ -475,9 +459,6 @@
             "type": "string",
             "nullable": true
           },
-          "isDemo": {
-            "type": "boolean"
-          },
           "happenedAt": {
             "type": "string",
             "format": "date-time"
@@ -498,7 +479,6 @@
           "note",
           "ignored",
           "reason",
-          "isDemo",
           "happenedAt",
           "type",
           "intensity"
@@ -546,15 +526,12 @@
             "type": "string",
             "example": "user_1"
           },
-          "email": {
+          "username": {
             "type": "string",
-            "format": "email"
+            "example": "Nick"
           },
-          "role": {
-            "type": "string",
-            "enum": [
-              "ADMIN"
-            ]
+          "hasPassword": {
+            "type": "boolean"
           },
           "createdAt": {
             "type": "string",
@@ -567,8 +544,8 @@
         },
         "required": [
           "id",
-          "email",
-          "role",
+          "username",
+          "hasPassword",
           "createdAt",
           "updatedAt"
         ]
@@ -589,12 +566,92 @@
           "user"
         ]
       },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 32,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "additionalProperties": false,
+        "description": "username: 3-32 characters (letters, digits, `_`, `-`), unique case-insensitively; password: 8-128 characters.",
+        "example": {
+          "username": "Nick",
+          "password": "correct horse battery staple"
+        }
+      },
+      "SetPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 32,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "additionalProperties": false,
+        "description": "Gives a Google-only account its first password; `username` optionally replaces the generated one.",
+        "example": {
+          "password": "correct horse battery staple",
+          "username": "Nick"
+        }
+      },
+      "GoogleLinkRequest": {
+        "type": "object",
+        "properties": {
+          "redirect": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect"
+        ],
+        "additionalProperties": false,
+        "description": "Frontend page the browser returns to after linking (must pass the origin allowlist).",
+        "example": {
+          "redirect": "https://job-tracker-new.pages.dev/settings"
+        }
+      },
+      "GoogleLinkResult": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Google's consent URL; navigate the browser to it"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
-          "email": {
+          "username": {
             "type": "string",
-            "format": "email"
+            "minLength": 1
           },
           "password": {
             "type": "string",
@@ -602,13 +659,13 @@
           }
         },
         "required": [
-          "email",
+          "username",
           "password"
         ],
         "additionalProperties": false,
-        "description": "Admin login credentials",
+        "description": "Username and password",
         "example": {
-          "email": "admin@example.com",
+          "username": "Nick",
           "password": "correct horse battery staple"
         }
       },
@@ -1186,7 +1243,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1213,7 +1270,6 @@
         ],
         "summary": "Create a job application",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1258,7 +1314,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1312,7 +1368,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1377,7 +1433,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1387,7 +1443,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -1414,7 +1470,6 @@
         ],
         "summary": "Update a job application",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1470,7 +1525,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1480,7 +1535,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -1508,7 +1563,6 @@
         "summary": "Delete a job application",
         "description": "Physically deletes the row — the only Job Tracker/Health Monitor resource that does.",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1544,7 +1598,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1554,7 +1608,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -1641,7 +1695,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1668,7 +1722,6 @@
         ],
         "summary": "Create a glucose measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1713,7 +1766,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1742,7 +1795,6 @@
         ],
         "summary": "Update, ignore, or restore a glucose measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1798,7 +1850,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1808,7 +1860,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -1895,7 +1947,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1922,7 +1974,6 @@
         ],
         "summary": "Create a blood pressure measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -1967,7 +2018,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1996,7 +2047,6 @@
         ],
         "summary": "Update, ignore, or restore a blood pressure measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2052,7 +2102,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2062,7 +2112,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -2149,7 +2199,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2176,7 +2226,6 @@
         ],
         "summary": "Create a weight measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2221,7 +2270,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2250,7 +2299,6 @@
         ],
         "summary": "Update, ignore, or restore a weight measurement",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2306,7 +2354,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2316,7 +2364,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -2403,7 +2451,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2430,7 +2478,6 @@
         ],
         "summary": "Create a symptom entry",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2475,7 +2522,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2504,7 +2551,6 @@
         ],
         "summary": "Update, ignore, or restore a symptom entry",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2560,7 +2606,7 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2570,7 +2616,7 @@
             }
           },
           "404": {
-            "description": "Resource not found, or outside the caller's isDemo scope",
+            "description": "Resource not found, or not owned by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -2654,7 +2700,77 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "Invalid or expired token (a present-but-invalid token, or a deleted account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "registerUser",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Create an account and issue an access token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — malformed body, unknown key, or empty PATCH body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Username is already taken` (case-insensitive)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2678,10 +2794,11 @@
     },
     "/auth/login": {
       "post": {
+        "operationId": "loginUser",
         "tags": [
           "Auth"
         ],
-        "summary": "Authenticate the admin and issue an access token",
+        "summary": "Authenticate and issue an access token",
         "security": [],
         "requestBody": {
           "required": true,
@@ -2723,7 +2840,7 @@
             }
           },
           "401": {
-            "description": "Invalid credentials (wrong email and wrong password are indistinguishable)",
+            "description": "`Invalid credentials` (unknown username and wrong password are indistinguishable)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2747,6 +2864,7 @@
     },
     "/auth/me": {
       "get": {
+        "operationId": "getCurrentUser",
         "tags": [
           "Auth"
         ],
@@ -2758,7 +2876,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The authenticated admin user",
+            "description": "The authenticated user",
             "content": {
               "application/json": {
                 "schema": {
@@ -2776,7 +2894,214 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, or expired token",
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCurrentUser",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Delete the account together with all its data",
+        "description": "Removes the user and all their job applications and Health Monitor records.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account and data deleted (empty body)"
+          },
+          "401": {
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/password": {
+      "post": {
+        "operationId": "setPassword",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Set the first password of a Google-only account",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password set; the updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PublicUser"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — malformed body, unknown key, or empty PATCH body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Password is already set`, or `Username is already taken`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/link": {
+      "post": {
+        "operationId": "startGoogleLink",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Start linking a Google account to the current user",
+        "description": "POST with a JSON body because a browser navigation cannot carry the Authorization header. The frontend navigates the browser to the returned `url`; the callback then redirects to `<redirect>#linked=google`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Google's consent URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GoogleLinkResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or `redirect must be an allowed frontend URL`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Google account is already linked`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2800,14 +3125,36 @@
     },
     "/auth/google": {
       "get": {
+        "operationId": "startGoogleSignIn",
         "tags": [
           "Auth"
         ],
         "summary": "Begin Google Sign-In",
+        "description": "Scope `openid` only. `redirect` must be an allowed frontend URL (exact origin match, or localhost/127.0.0.1 on any port; http/https; no `#`).",
         "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "redirect",
+            "in": "query"
+          }
+        ],
         "responses": {
           "302": {
-            "description": "Redirects to Google's consent screen (scope openid email) with a signed, short-lived state param (Decision #8)"
+            "description": "Redirects to Google's consent screen with a signed, short-lived `state` that carries the validated redirect"
+          },
+          "400": {
+            "description": "`redirect must be an allowed frontend URL` (missing or not allowlisted; no redirect is made)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "500": {
             "description": "Internal server error",
@@ -2824,62 +3171,45 @@
     },
     "/auth/google/callback": {
       "get": {
+        "operationId": "completeGoogleSignIn",
         "tags": [
           "Auth"
         ],
-        "summary": "Complete Google Sign-In",
+        "summary": "Complete Google Sign-In or account linking",
+        "description": "Always answers with a redirect to the frontend, carrying the result in the URL fragment: `#token=<jwt>` (sign-in), `#linked=google` (link flow), `#error=access_denied` (user cancelled), `#error=google_failed`, `#error=google_already_used` (link flow, Google account belongs to another user).",
         "security": [],
         "parameters": [
           {
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "string"
             },
-            "required": true,
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
             "name": "code",
             "in": "query"
           },
           {
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "string"
             },
-            "required": true,
-            "name": "state",
+            "required": false,
+            "name": "error",
             "in": "query"
           }
         ],
         "responses": {
-          "200": {
-            "description": "Email matched the existing admin — behaves like POST /auth/login",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/LoginResult"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error — malformed body, unknown key, or empty PATCH body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
+          "302": {
+            "description": "Redirect to `<redirect>#token=...`, `#linked=google`, or `#error=access_denied|google_failed|google_already_used`"
           },
           "401": {
-            "description": "state missing/invalid/expired/not issued by this server, the Google account's email does not match the existing admin, or Google reports the email as unverified (no account is ever created in any case)",
+            "description": "`Invalid or expired state` — missing, invalid, expired, or not issued by this server (the redirect target is unknown, so no redirect is made)",
             "content": {
               "application/json": {
                 "schema": {

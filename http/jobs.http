@@ -1,7 +1,6 @@
 # Job Tracker — full CRUD + meta + edge cases (v1-plan.md Section 9.2)
 # Run top to bottom: the Create request stores {{jobId}} for the later ones.
-# The "Admin" section at the bottom needs {{token}} — run auth.http's Login
-# request first (v2-plan.md Section 9).
+# Writes need {{token}} — run auth.http's Register request first (v4-plan.md).
 
 ### List — success, pagination envelope
 GET {{baseUrl}}/jobs?page=1&limit=5
@@ -15,14 +14,15 @@ client.test('200, data[] + meta', function () {
 });
 %}
 
-### List — demo data behavior: every seeded row has isDemo true
+### List — guest sees demo rows only, without isDemo/userId
 GET {{baseUrl}}/jobs?limit=100
 
 > {%
-client.test('all rows isDemo', function () {
+client.test('200, no isDemo/userId on rows', function () {
   client.assert(response.status === 200, 'expected 200');
   response.body.data.forEach(function (row) {
-    client.assert(row.isDemo === true, 'expected isDemo true on ' + row.id);
+    client.assert(row.isDemo === undefined, 'isDemo must not be exposed on ' + row.id);
+    client.assert(row.userId === undefined, 'userId must not be exposed on ' + row.id);
   });
 });
 %}
@@ -91,6 +91,7 @@ client.test('200, stats math', function () {
 ### Create — 201, server-managed fields stamped
 POST {{baseUrl}}/jobs
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "company": "HTTP Client Co",
@@ -98,9 +99,8 @@ Content-Type: application/json
 }
 
 > {%
-client.test('201, defaults + isDemo', function () {
+client.test('201, defaults', function () {
   client.assert(response.status === 201, 'expected 201');
-  client.assert(response.body.data.isDemo === true, 'expected isDemo true');
   client.assert(response.body.data.status === 'SAVED', 'expected default status SAVED');
   client.assert(response.body.data.currency === 'USD', 'expected default currency USD');
 });
@@ -110,6 +110,7 @@ client.global.set('jobId', response.body.data.id);
 ### Create — validation error → 400 with field details
 POST {{baseUrl}}/jobs
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "position": "No company"
@@ -126,11 +127,12 @@ client.test('400, details.company', function () {
 ### Create — server-managed field in body → 400 (Decision #32)
 POST {{baseUrl}}/jobs
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "company": "HTTP Client Co",
   "position": "Manual Tester",
-  "isDemo": false
+  "userId": "someone-else"
 }
 
 > {%
@@ -163,6 +165,7 @@ client.test('404 envelope', function () {
 ### Update — partial patch
 PATCH {{baseUrl}}/jobs/{{jobId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "status": "APPLIED"
@@ -178,6 +181,7 @@ client.test('200, status updated', function () {
 ### Update — empty body → 400 (Decision #33)
 PATCH {{baseUrl}}/jobs/{{jobId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {}
 
@@ -186,6 +190,7 @@ Content-Type: application/json
 ### Update — unknown id → 404
 PATCH {{baseUrl}}/jobs/definitely-not-an-id
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "status": "APPLIED"
@@ -195,6 +200,7 @@ Content-Type: application/json
 
 ### Delete — success envelope
 DELETE {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
 
 > {%
 client.test('200, success true', function () {
@@ -205,58 +211,96 @@ client.test('200, success true', function () {
 
 ### Delete — repeat → 404
 DELETE {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
 
 > {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
 
 ###############################################################################
-# Admin — same endpoints, scoped to real (isDemo: false) data (v2-plan.md
-# Decisions #4/#11). Run auth.http's Login request first to populate {{token}}.
+# Guests and owners (v4-plan.md): a guest is read-only and sees demo data only;
+# a record created with {{token}} belongs to that user alone. Needs {{token}} —
+# run auth.http's Register request first.
 ###############################################################################
 
-### Admin create — real data, invisible to guest reads
+### Owner create — a record owned by the registered user
 POST {{baseUrl}}/jobs
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "company": "Admin HTTP Client Co",
-  "position": "Manual Tester (real)"
+  "company": "Owned HTTP Client Co",
+  "position": "Manual Tester (owned)"
 }
 
 > {%
-client.test('201, isDemo false', function () {
+client.test('201, no isDemo/userId in the response', function () {
   client.assert(response.status === 201, 'expected 201');
-  client.assert(response.body.data.isDemo === false, 'expected isDemo false for admin-created data');
+  client.assert(response.body.data.isDemo === undefined, 'isDemo must not be exposed');
+  client.assert(response.body.data.userId === undefined, 'userId must not be exposed');
 });
-client.global.set('adminJobId', response.body.data.id);
+client.global.set('ownJobId', response.body.data.id);
 %}
 
-### Admin list — only sees real data, never the guest's demo rows
-GET {{baseUrl}}/jobs
-Authorization: Bearer {{token}}
+### Guest cannot read the owner's record by id — 404, not 403
+GET {{baseUrl}}/jobs/{{ownJobId}}
+
+> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+### Guest cannot delete the owner's record — 401 (guest writes are rejected up front)
+DELETE {{baseUrl}}/jobs/{{ownJobId}}
 
 > {%
-client.test('200, all rows isDemo false', function () {
-  client.assert(response.status === 200, 'expected 200');
-  response.body.data.forEach(function (row) {
-    client.assert(row.isDemo === false, 'expected isDemo false on ' + row.id);
-  });
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
 });
 %}
 
-### Guest cannot read the admin's real record by id — 404, not 403 (Decision #11)
-GET {{baseUrl}}/jobs/{{adminJobId}}
+### Guest create — valid body → 401
+POST {{baseUrl}}/jobs
+Content-Type: application/json
 
-> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+{
+  "company": "Guest Co",
+  "position": "Should not exist"
+}
 
-### Admin cannot read a guest/demo record by id either — 404 both directions
-GET {{baseUrl}}/jobs/{{jobId}}
-Authorization: Bearer {{token}}
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
 
-> {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+### Guest create — invalid body → still 401 (the guard runs before validation)
+POST {{baseUrl}}/jobs
+Content-Type: application/json
 
-### Cleanup — delete the admin test record
-DELETE {{baseUrl}}/jobs/{{adminJobId}}
+{}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
+
+### Guest update — 401
+PATCH {{baseUrl}}/jobs/{{ownJobId}}
+Content-Type: application/json
+
+{
+  "status": "APPLIED"
+}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
+
+### Cleanup — the owner deletes the record
+DELETE {{baseUrl}}/jobs/{{ownJobId}}
 Authorization: Bearer {{token}}
 
 > {% client.test('200', function () { client.assert(response.status === 200, 'expected 200'); }); %}

@@ -1,5 +1,7 @@
 # Blood Pressure — create, ignore/restore round-trip (v1-plan.md Section 9.2)
-# No DELETE on Health Monitor: reseed via `npm run db:seed:health-monitor` cleans up.
+# No DELETE on Health Monitor: records belong to the registered user and
+# disappear with it (auth.http's DELETE /auth/me).
+# Writes need {{token}} — run auth.http's Register request first (v4-plan.md).
 
 ### List — success
 GET {{baseUrl}}/blood-pressure
@@ -14,6 +16,7 @@ client.test('200, data[]', function () {
 ### Create — 201 with server stamps
 POST {{baseUrl}}/blood-pressure
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "measuredAt": "2026-07-02T08:00:00.000Z",
@@ -26,7 +29,6 @@ Content-Type: application/json
 > {%
 client.test('201, stamps', function () {
   client.assert(response.status === 201, 'expected 201');
-  client.assert(response.body.data.isDemo === true, 'expected isDemo true');
   client.assert(response.body.data.ignored === false, 'expected ignored false');
 });
 client.global.set('bpId', response.body.data.id);
@@ -35,6 +37,7 @@ client.global.set('bpId', response.body.data.id);
 ### Create — systolic <= diastolic → 400
 POST {{baseUrl}}/blood-pressure
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "measuredAt": "2026-07-02T08:00:00.000Z",
@@ -48,6 +51,7 @@ Content-Type: application/json
 ### Ignore
 PATCH {{baseUrl}}/blood-pressure/{{bpId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "ignored": true,
@@ -64,6 +68,7 @@ client.test('200, ignored', function () {
 ### Restore
 PATCH {{baseUrl}}/blood-pressure/{{bpId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "ignored": false,
@@ -80,9 +85,88 @@ client.test('200, restored', function () {
 ### Update — invalid identifier → 404
 PATCH {{baseUrl}}/blood-pressure/definitely-not-an-id
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "pulse": 70
 }
 
 > {% client.test('404', function () { client.assert(response.status === 404, 'expected 404'); }); %}
+
+###############################################################################
+# Guests and owners (v4-plan.md): a guest is read-only and sees demo data only;
+# a record created with {{token}} belongs to that user alone. Needs {{token}} —
+# run auth.http's Register request first.
+###############################################################################
+
+### Owner list — contains the record created above
+GET {{baseUrl}}/blood-pressure
+Authorization: Bearer {{token}}
+
+> {%
+client.test('200, owner sees its own record, no isDemo/userId', function () {
+  client.assert(response.status === 200, 'expected 200');
+  var id = client.global.get('bpId');
+  var row = response.body.data.find(function (r) { return r.id === id; });
+  client.assert(!!row, 'expected the owner record in the list');
+  client.assert(row.isDemo === undefined, 'isDemo must not be exposed');
+  client.assert(row.userId === undefined, 'userId must not be exposed');
+});
+%}
+
+### Guest list — never contains the owner's record
+GET {{baseUrl}}/blood-pressure
+
+> {%
+client.test('200, owner record absent', function () {
+  client.assert(response.status === 200, 'expected 200');
+  var id = client.global.get('bpId');
+  client.assert(!response.body.data.some(function (r) { return r.id === id; }), 'owner record must not leak to guests');
+});
+%}
+
+### Guest create — valid body → 401
+POST {{baseUrl}}/blood-pressure
+Content-Type: application/json
+
+{
+  "measuredAt": "2026-07-02T08:00:00.000Z",
+  "systolic": 120,
+  "diastolic": 80,
+  "pulse": 70
+}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
+
+### Guest create — invalid body → still 401 (the guard runs before validation)
+POST {{baseUrl}}/blood-pressure
+Content-Type: application/json
+
+{}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}
+
+### Guest update — 401
+PATCH {{baseUrl}}/blood-pressure/{{bpId}}
+Content-Type: application/json
+
+{
+  "pulse": 70
+}
+
+> {%
+client.test('401, Authentication required', function () {
+  client.assert(response.status === 401, 'expected 401');
+  client.assert(response.body.error.message === 'Authentication required', 'expected Authentication required');
+});
+%}

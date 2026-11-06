@@ -2,7 +2,14 @@ import './extend-zod';
 import { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema';
-import { googleCallbackQuerySchema, loginSchema } from '../schemas/auth.schema';
+import {
+  googleCallbackQuerySchema,
+  googleLinkBodySchema,
+  googleStartQuerySchema,
+  loginSchema,
+  registerSchema,
+  setPasswordSchema,
+} from '../schemas/auth.schema';
 import { createBloodPressureSchema, updateBloodPressureSchema } from '../schemas/blood-pressure.schema';
 import { dateRangeQuerySchema, idParamSchema } from '../schemas/common.schema';
 import { createGlucoseSchema, updateGlucoseSchema } from '../schemas/glucose.schema';
@@ -27,13 +34,13 @@ const bearerAuth = registry.registerComponent('securitySchemes', 'bearerAuth', {
   scheme: 'bearer',
   bearerFormat: 'JWT',
   description:
-    "Optional on most endpoints: absent -> guest, scoped to demo data; present and valid -> admin, scoped to real data. A present-but-invalid token always 401s (never silently downgraded to guest). Required in practice for GET /auth/me.",
+    "Reads: optional — absent -> guest (read-only demo data); present and valid -> the caller's own data. Writes (POST/PATCH/DELETE) and the /auth/me routes require a valid token; a guest gets 401 `Authentication required` before body validation. A present-but-invalid token always 401s `Invalid or expired token` (never silently downgraded to guest).",
 });
 
 // Decision #10: every schema below is either the project's existing
 // src/schemas/*.ts export (wrapped here with .openapi() metadata, not
 // mutated in place) or, where no request schema exists (response shapes,
-// the not-yet-implemented Google callback query), a schema authored here.
+// the Google callback query), a schema authored here.
 // Route files under src/routes/*.ts are never touched.
 
 const OPTIONAL_AUTH = [{}, { [bearerAuth.name]: [] }];
@@ -69,8 +76,11 @@ function errorResponse(description: string) {
 const VALIDATION_ERROR = errorResponse(
   'Validation error — malformed body, unknown key, or empty PATCH body',
 );
-const UNAUTHORIZED = errorResponse('Missing, invalid, or expired token');
-const NOT_FOUND = errorResponse("Resource not found, or outside the caller's isDemo scope");
+const UNAUTHORIZED = errorResponse('Invalid or expired token (a present-but-invalid token, or a deleted account)');
+const WRITE_UNAUTHORIZED = errorResponse(
+  'No token (guest) -> `Authentication required`, returned before body validation; invalid or expired token -> `Invalid or expired token`',
+);
+const NOT_FOUND = errorResponse('Resource not found, or not owned by the caller');
 const INTERNAL_ERROR = errorResponse('Internal server error');
 
 function okResponse(schema: z.ZodTypeAny, description: string) {
@@ -119,7 +129,6 @@ const jobApplicationSchema = registry.register(
     nextFollowUpAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
-    isDemo: z.boolean(),
   }),
 );
 
@@ -157,7 +166,6 @@ const measurementBaseFields = {
   note: z.string().nullable(),
   ignored: z.boolean(),
   reason: z.string().nullable(),
-  isDemo: z.boolean(),
 };
 
 const glucoseMeasurementSchema = registry.register(
@@ -261,13 +269,49 @@ const listJobApplicationsQueryRequestSchema = listJobApplicationsQuerySchema.ope
 });
 
 const googleCallbackQueryRequestSchema = googleCallbackQuerySchema.openapi({
-  description: 'Forwarded by Google after the user consents',
+  description: 'Forwarded by Google after the user consents or cancels',
+});
+
+const registerRequestSchema = registry.register(
+  'RegisterRequest',
+  registerSchema.openapi({
+    description:
+      'username: 3-32 characters (letters, digits, `_`, `-`), unique case-insensitively; password: 8-128 characters.',
+    example: { username: 'Nick', password: 'correct horse battery staple' },
+  }),
+);
+
+const setPasswordRequestSchema = registry.register(
+  'SetPasswordRequest',
+  setPasswordSchema.openapi({
+    description: 'Gives a Google-only account its first password; `username` optionally replaces the generated one.',
+    example: { password: 'correct horse battery staple', username: 'Nick' },
+  }),
+);
+
+const googleLinkRequestSchema = registry.register(
+  'GoogleLinkRequest',
+  googleLinkBodySchema.openapi({
+    description: 'Frontend page the browser returns to after linking (must pass the origin allowlist).',
+    example: { redirect: 'https://job-tracker-new.pages.dev/settings' },
+  }),
+);
+
+const googleLinkResultSchema = registry.register(
+  'GoogleLinkResult',
+  z.object({
+    url: z.string().url().openapi({ description: "Google's consent URL; navigate the browser to it" }),
+  }),
+);
+
+const googleStartQueryRequestSchema = googleStartQuerySchema.openapi({
+  description: 'Where to send the browser afterwards',
 });
 
 const loginRequestSchema = registry.register(
   'LoginRequest',
   loginSchema.openapi({
-    description: 'Admin login credentials',
+    description: 'Username and password',
     example: { username: 'Nick', password: 'correct horse battery staple' },
   }),
 );
@@ -454,14 +498,14 @@ registry.registerPath({
   path: '/jobs',
   tags: ['Job Tracker'],
   summary: 'Create a job application',
-  security: OPTIONAL_AUTH,
+  security: REQUIRED_AUTH,
   request: {
     body: { required: true, content: { 'application/json': { schema: createJobApplicationRequestSchema } } },
   },
   responses: {
     201: okResponse(jobApplicationSchema, 'Job application created'),
     400: VALIDATION_ERROR,
-    401: UNAUTHORIZED,
+    401: WRITE_UNAUTHORIZED,
     500: INTERNAL_ERROR,
   },
 });
@@ -471,7 +515,7 @@ registry.registerPath({
   path: '/jobs/{id}',
   tags: ['Job Tracker'],
   summary: 'Update a job application',
-  security: OPTIONAL_AUTH,
+  security: REQUIRED_AUTH,
   request: {
     params: idParamRequestSchema,
     body: { required: true, content: { 'application/json': { schema: updateJobApplicationRequestSchema } } },
@@ -479,7 +523,7 @@ registry.registerPath({
   responses: {
     200: okResponse(jobApplicationSchema, 'Job application updated'),
     400: VALIDATION_ERROR,
-    401: UNAUTHORIZED,
+    401: WRITE_UNAUTHORIZED,
     404: NOT_FOUND,
     500: INTERNAL_ERROR,
   },
@@ -491,11 +535,11 @@ registry.registerPath({
   tags: ['Job Tracker'],
   summary: 'Delete a job application',
   description: 'Physically deletes the row — the only Job Tracker/Health Monitor resource that does.',
-  security: OPTIONAL_AUTH,
+  security: REQUIRED_AUTH,
   request: { params: idParamRequestSchema },
   responses: {
     200: okResponse(deleteResultSchema, 'Job application deleted'),
-    401: UNAUTHORIZED,
+    401: WRITE_UNAUTHORIZED,
     404: NOT_FOUND,
     500: INTERNAL_ERROR,
   },
@@ -545,14 +589,14 @@ function registerHealthMonitorResource(resource: HealthMonitorResource): void {
     path,
     tags: ['Health Monitor'],
     summary: `Create a ${singular}`,
-    security: OPTIONAL_AUTH,
+    security: REQUIRED_AUTH,
     request: {
       body: { required: true, content: { 'application/json': { schema: createSchema } } },
     },
     responses: {
       201: okResponse(entitySchema, `${capitalize(singular)} created`),
       400: VALIDATION_ERROR,
-      401: UNAUTHORIZED,
+      401: WRITE_UNAUTHORIZED,
       500: INTERNAL_ERROR,
     },
   });
@@ -562,7 +606,7 @@ function registerHealthMonitorResource(resource: HealthMonitorResource): void {
     path: `${path}/{id}`,
     tags: ['Health Monitor'],
     summary: `Update, ignore, or restore a ${singular}`,
-    security: OPTIONAL_AUTH,
+    security: REQUIRED_AUTH,
     request: {
       params: idParamRequestSchema,
       body: { required: true, content: { 'application/json': { schema: updateSchema } } },
@@ -570,7 +614,7 @@ function registerHealthMonitorResource(resource: HealthMonitorResource): void {
     responses: {
       200: okResponse(entitySchema, `${capitalize(singular)} updated`),
       400: VALIDATION_ERROR,
-      401: UNAUTHORIZED,
+      401: WRITE_UNAUTHORIZED,
       404: NOT_FOUND,
       500: INTERNAL_ERROR,
     },
@@ -637,9 +681,28 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/auth/login',
+  path: '/auth/register',
+  operationId: 'registerUser',
   tags: ['Auth'],
-  summary: 'Authenticate the admin and issue an access token',
+  summary: 'Create an account and issue an access token',
+  security: [],
+  request: {
+    body: { required: true, content: { 'application/json': { schema: registerRequestSchema } } },
+  },
+  responses: {
+    201: okResponse(loginResultSchema, 'Account created'),
+    400: VALIDATION_ERROR,
+    409: errorResponse('`Username is already taken` (case-insensitive)'),
+    500: INTERNAL_ERROR,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/login',
+  operationId: 'loginUser',
+  tags: ['Auth'],
+  summary: 'Authenticate and issue an access token',
   security: [],
   request: {
     body: { required: true, content: { 'application/json': { schema: loginRequestSchema } } },
@@ -647,7 +710,7 @@ registry.registerPath({
   responses: {
     200: okResponse(loginResultSchema, 'Login succeeded'),
     400: VALIDATION_ERROR,
-    401: errorResponse('Invalid credentials (wrong email and wrong password are indistinguishable)'),
+    401: errorResponse('`Invalid credentials` (unknown username and wrong password are indistinguishable)'),
     500: INTERNAL_ERROR,
   },
 });
@@ -655,12 +718,68 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/auth/me',
+  operationId: 'getCurrentUser',
   tags: ['Auth'],
   summary: 'Get the current authenticated user',
   security: REQUIRED_AUTH,
   responses: {
-    200: okResponse(publicUserSchema, 'The authenticated admin user'),
-    401: UNAUTHORIZED,
+    200: okResponse(publicUserSchema, 'The authenticated user'),
+    401: WRITE_UNAUTHORIZED,
+    500: INTERNAL_ERROR,
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/auth/me',
+  operationId: 'deleteCurrentUser',
+  tags: ['Auth'],
+  summary: 'Delete the account together with all its data',
+  description: 'Removes the user and all their job applications and Health Monitor records.',
+  security: REQUIRED_AUTH,
+  responses: {
+    204: { description: 'Account and data deleted (empty body)' },
+    401: WRITE_UNAUTHORIZED,
+    500: INTERNAL_ERROR,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/me/password',
+  operationId: 'setPassword',
+  tags: ['Auth'],
+  summary: 'Set the first password of a Google-only account',
+  security: REQUIRED_AUTH,
+  request: {
+    body: { required: true, content: { 'application/json': { schema: setPasswordRequestSchema } } },
+  },
+  responses: {
+    200: okResponse(publicUserSchema, 'Password set; the updated user'),
+    400: VALIDATION_ERROR,
+    401: WRITE_UNAUTHORIZED,
+    409: errorResponse('`Password is already set`, or `Username is already taken`'),
+    500: INTERNAL_ERROR,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/google/link',
+  operationId: 'startGoogleLink',
+  tags: ['Auth'],
+  summary: 'Start linking a Google account to the current user',
+  description:
+    'POST with a JSON body because a browser navigation cannot carry the Authorization header. The frontend navigates the browser to the returned `url`; the callback then redirects to `<redirect>#linked=google`.',
+  security: REQUIRED_AUTH,
+  request: {
+    body: { required: true, content: { 'application/json': { schema: googleLinkRequestSchema } } },
+  },
+  responses: {
+    200: okResponse(googleLinkResultSchema, "Google's consent URL"),
+    400: errorResponse('Validation error, or `redirect must be an allowed frontend URL`'),
+    401: WRITE_UNAUTHORIZED,
+    409: errorResponse('`Google account is already linked`'),
     500: INTERNAL_ERROR,
   },
 });
@@ -668,14 +787,21 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/auth/google',
+  operationId: 'startGoogleSignIn',
   tags: ['Auth'],
   summary: 'Begin Google Sign-In',
+  description:
+    'Scope `openid` only. `redirect` must be an allowed frontend URL (exact origin match, or localhost/127.0.0.1 on any port; http/https; no `#`).',
   security: [],
+  request: { query: googleStartQueryRequestSchema },
   responses: {
     302: {
       description:
-        "Redirects to Google's consent screen (scope openid email) with a signed, short-lived state param (Decision #8)",
+        "Redirects to Google's consent screen with a signed, short-lived `state` that carries the validated redirect",
     },
+    400: errorResponse(
+      '`redirect must be an allowed frontend URL` (missing or not allowlisted; no redirect is made)',
+    ),
     500: INTERNAL_ERROR,
   },
 });
@@ -683,15 +809,20 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/auth/google/callback',
+  operationId: 'completeGoogleSignIn',
   tags: ['Auth'],
-  summary: 'Complete Google Sign-In',
+  summary: 'Complete Google Sign-In or account linking',
+  description:
+    'Always answers with a redirect to the frontend, carrying the result in the URL fragment: `#token=<jwt>` (sign-in), `#linked=google` (link flow), `#error=access_denied` (user cancelled), `#error=google_failed`, `#error=google_already_used` (link flow, Google account belongs to another user).',
   security: [],
   request: { query: googleCallbackQueryRequestSchema },
   responses: {
-    200: okResponse(loginResultSchema, "Email matched the existing admin — behaves like POST /auth/login"),
-    400: VALIDATION_ERROR,
+    302: {
+      description:
+        'Redirect to `<redirect>#token=...`, `#linked=google`, or `#error=access_denied|google_failed|google_already_used`',
+    },
     401: errorResponse(
-      "state missing/invalid/expired/not issued by this server, the Google account's email does not match the existing admin, or Google reports the email as unverified (no account is ever created in any case)",
+      '`Invalid or expired state` — missing, invalid, expired, or not issued by this server (the redirect target is unknown, so no redirect is made)',
     ),
     500: INTERNAL_ERROR,
   },
