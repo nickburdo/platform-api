@@ -91,6 +91,6 @@ describe('updateGlucoseSchema', () => {
   });
 
   it('rejects unknown keys on update (Decision #32)', () => {
-    expect(updateGlucoseSchema.safeParse({ fastingValue: 95, isDemo: true }).success).toBe(false);
+    expect(updateGlucoseSchema.safeParse({ fastingValue: 95, userId: 'x' }).success).toBe(false);
   });
 });

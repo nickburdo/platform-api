@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { omitUserId, type OwnerId } from '../utils/owner';
 import {
   createBloodPressureMeasurement as createBloodPressureMeasurementRow,
   findBloodPressureMeasurementById as findBloodPressureMeasurementByIdRow,
@@ -18,37 +19,43 @@ import {
   withUpdateStamp,
 } from './health-monitor-shared';
 
+export type BloodPressureMeasurementView = Omit<BloodPressureMeasurement, 'userId'>;
+
 export async function createBloodPressureMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createBloodPressureSchema>,
-  isDemo: boolean,
-): Promise<BloodPressureMeasurement> {
-  return createBloodPressureMeasurementRow(db, withCreateStamps(id, input, isDemo));
+  ownerId: OwnerId,
+): Promise<BloodPressureMeasurementView> {
+  const row = await createBloodPressureMeasurementRow(db, withCreateStamps(id, input, ownerId));
+  return omitUserId(row);
 }
 
 export async function updateBloodPressureMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateBloodPressureSchema>,
-  isDemo: boolean,
-): Promise<BloodPressureMeasurement | undefined> {
+  ownerId: OwnerId,
+): Promise<BloodPressureMeasurementView | undefined> {
   assertReasonRequiredWhenIgnored(input);
-  return updateBloodPressureMeasurementRow(db, id, withUpdateStamp(input), isDemo);
+  const row = await updateBloodPressureMeasurementRow(db, id, withUpdateStamp(input), ownerId);
+  return row && omitUserId(row);
 }
 
 export async function listBloodPressureMeasurements(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
-  isDemo: boolean,
-): Promise<BloodPressureMeasurement[]> {
-  return listBloodPressureMeasurementsRow(db, { ...query, isDemo });
+  ownerId: OwnerId,
+): Promise<BloodPressureMeasurementView[]> {
+  const rows = await listBloodPressureMeasurementsRow(db, { ...query, ownerId });
+  return rows.map(omitUserId);
 }
 
 export async function findBloodPressureMeasurementById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
-): Promise<BloodPressureMeasurement | undefined> {
-  return findBloodPressureMeasurementByIdRow(db, id, isDemo);
+  ownerId: OwnerId,
+): Promise<BloodPressureMeasurementView | undefined> {
+  const row = await findBloodPressureMeasurementByIdRow(db, id, ownerId);
+  return row && omitUserId(row);
 }

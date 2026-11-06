@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app';
 import { dateRangeQuerySchema, idParamSchema } from '../schemas/common.schema';
 import { createGlucoseSchema, updateGlucoseSchema } from '../schemas/glucose.schema';
-import { scopeIsDemo } from '../middleware/auth';
+import { ownerIdOf, requireUser } from '../middleware/auth';
 import {
   createGlucoseMeasurement,
   listGlucoseMeasurements,
@@ -21,25 +21,31 @@ glucoseRoutes.get('/', zValidator('query', dateRangeQuerySchema, validationHook)
   const rows = await listGlucoseMeasurements(
     c.var.healthMonitorDb,
     c.req.valid('query'),
-    scopeIsDemo(c.var.identity),
+    ownerIdOf(c.var.identity),
   );
   return c.json({ data: rows });
 });
 
-glucoseRoutes.post('/', zValidator('json', createGlucoseSchema, validationHook), async (c) => {
-  // The route owns ID generation (Decision #1).
-  const id = crypto.randomUUID();
-  const created = await createGlucoseMeasurement(
-    c.var.healthMonitorDb,
-    id,
-    c.req.valid('json'),
-    scopeIsDemo(c.var.identity),
-  );
-  return c.json({ data: created }, 201);
-});
+glucoseRoutes.post(
+  '/',
+  requireUser,
+  zValidator('json', createGlucoseSchema, validationHook),
+  async (c) => {
+    // The route owns ID generation (Decision #1).
+    const id = crypto.randomUUID();
+    const created = await createGlucoseMeasurement(
+      c.var.healthMonitorDb,
+      id,
+      c.req.valid('json'),
+      ownerIdOf(c.var.identity),
+    );
+    return c.json({ data: created }, 201);
+  },
+);
 
 glucoseRoutes.patch(
   '/:id',
+  requireUser,
   zValidator('param', idParamSchema, validationHook),
   zValidator('json', updateGlucoseSchema, validationHook),
   async (c) => {
@@ -47,7 +53,7 @@ glucoseRoutes.patch(
       c.var.healthMonitorDb,
       c.req.valid('param').id,
       c.req.valid('json'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     if (!updated) {
       return c.json(errorBody('Resource not found'), 404);

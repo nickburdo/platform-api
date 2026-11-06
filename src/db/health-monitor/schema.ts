@@ -4,9 +4,8 @@ const commonColumns = {
   id: text('id').primaryKey(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-  isDemo: integer('is_demo', { mode: 'boolean' as const })
-    .notNull()
-    .default(false),
+  // null = demo scope (v4 Decision 1).
+  userId: text('user_id'),
   ignored: integer('ignored', { mode: 'boolean' as const })
     .notNull()
     .default(false),
@@ -22,7 +21,10 @@ export const glucoseMeasurements = sqliteTable(
     afterMealValue: real('after_meal_value'),
     note: text('note'),
   },
-  (table) => [index('glucose_measurements_measured_at_idx').on(table.measuredAt)],
+  (table) => [
+    index('glucose_measurements_measured_at_idx').on(table.measuredAt),
+    index('glucose_measurements_user_id_idx').on(table.userId),
+  ],
 );
 
 export const bloodPressureMeasurements = sqliteTable(
@@ -35,7 +37,10 @@ export const bloodPressureMeasurements = sqliteTable(
     pulse: integer('pulse').notNull(),
     note: text('note'),
   },
-  (table) => [index('blood_pressure_measurements_measured_at_idx').on(table.measuredAt)],
+  (table) => [
+    index('blood_pressure_measurements_measured_at_idx').on(table.measuredAt),
+    index('blood_pressure_measurements_user_id_idx').on(table.userId),
+  ],
 );
 
 export const weightMeasurements = sqliteTable(
@@ -46,7 +51,10 @@ export const weightMeasurements = sqliteTable(
     value: real('value').notNull(),
     note: text('note'),
   },
-  (table) => [index('weight_measurements_measured_at_idx').on(table.measuredAt)],
+  (table) => [
+    index('weight_measurements_measured_at_idx').on(table.measuredAt),
+    index('weight_measurements_user_id_idx').on(table.userId),
+  ],
 );
 
 export const symptomEntries = sqliteTable(
@@ -61,6 +69,7 @@ export const symptomEntries = sqliteTable(
   (table) => [
     index('symptom_entries_happened_at_idx').on(table.happenedAt),
     index('symptom_entries_type_idx').on(table.type),
+    index('symptom_entries_user_id_idx').on(table.userId),
   ],
 );
 

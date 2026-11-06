@@ -1,15 +1,17 @@
+import type { OwnerId } from '../utils/owner';
+
 // Shared by all four Health Monitor services (glucose, blood-pressure,
 // weight, symptom) — deduplicates the "stamp server-managed fields on
 // create/update" logic that was previously copy-pasted across all four.
 
-// `isDemo` comes from the caller's identity scope (V2, ADR-012): guests
-// create demo records, the admin creates real ones. Never client-supplied.
-export function withCreateStamps<T extends object>(id: string, input: T, isDemo: boolean) {
+// `userId` comes from the caller's identity (v4): only authenticated users
+// create records, always under their own id. Never client-supplied.
+export function withCreateStamps<T extends object>(id: string, input: T, ownerId: OwnerId) {
   const now = new Date().toISOString();
   return {
     id,
     ...input,
-    isDemo,
+    userId: ownerId,
     ignored: false as const,
     reason: '',
     createdAt: now,

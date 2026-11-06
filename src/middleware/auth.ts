@@ -50,9 +50,3 @@ export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
 export function ownerIdOf(identity: Identity): OwnerId {
   return identity.scope === 'user' ? identity.userId : null;
 }
-
-// TEMPORARY: business routes still partition by isDemo until Tasks 3-4
-// replace it with ownerIdOf.
-export function scopeIsDemo(identity: Identity): boolean {
-  return identity.scope !== 'user';
-}

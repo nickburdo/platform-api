@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import { ownerFilter, type OwnerId } from '../../utils/owner';
 import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { symptomEntries, type NewSymptomEntry, type SymptomEntry } from './schema';
@@ -6,12 +7,12 @@ import { symptomEntries, type NewSymptomEntry, type SymptomEntry } from './schem
 export type ListSymptomsParams = DateRangeFilterParams;
 
 function buildFilters(params: ListSymptomsParams) {
-  return buildDateRangeFilter(symptomEntries.happenedAt, symptomEntries.isDemo, params);
+  return buildDateRangeFilter(symptomEntries.happenedAt, symptomEntries.userId, params);
 }
 
 export async function listSymptomEntries(
   db: HealthMonitorDb,
-  params: ListSymptomsParams = {},
+  params: ListSymptomsParams,
 ): Promise<SymptomEntry[]> {
   return db
     .select()
@@ -20,17 +21,16 @@ export async function listSymptomEntries(
     .orderBy(asc(symptomEntries.happenedAt));
 }
 
-// By-id operations are scoped to the caller's isDemo world (v2-plan.md
-// Decision #11): a record outside the scope behaves as nonexistent.
+// By-id operations are scoped to the caller's owner scope (v4 Decision 1): a record outside the scope behaves as nonexistent.
 export async function findSymptomEntryById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<SymptomEntry | undefined> {
   const [row] = await db
     .select()
     .from(symptomEntries)
-    .where(and(eq(symptomEntries.id, id), eq(symptomEntries.isDemo, isDemo)));
+    .where(and(eq(symptomEntries.id, id), ownerFilter(symptomEntries.userId, ownerId)));
   return row;
 }
 
@@ -47,12 +47,12 @@ export async function updateSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewSymptomEntry>,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<SymptomEntry | undefined> {
   const [row] = await db
     .update(symptomEntries)
     .set(data)
-    .where(and(eq(symptomEntries.id, id), eq(symptomEntries.isDemo, isDemo)))
+    .where(and(eq(symptomEntries.id, id), ownerFilter(symptomEntries.userId, ownerId)))
     .returning();
   return row;
 }

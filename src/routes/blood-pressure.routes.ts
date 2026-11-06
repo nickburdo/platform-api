@@ -5,7 +5,7 @@ import {
   createBloodPressureSchema,
   updateBloodPressureSchema,
 } from '../schemas/blood-pressure.schema';
-import { scopeIsDemo } from '../middleware/auth';
+import { ownerIdOf, requireUser } from '../middleware/auth';
 import { dateRangeQuerySchema, idParamSchema } from '../schemas/common.schema';
 import {
   createBloodPressureMeasurement,
@@ -26,7 +26,7 @@ bloodPressureRoutes.get(
     const rows = await listBloodPressureMeasurements(
       c.var.healthMonitorDb,
       c.req.valid('query'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     return c.json({ data: rows });
   },
@@ -34,6 +34,7 @@ bloodPressureRoutes.get(
 
 bloodPressureRoutes.post(
   '/',
+  requireUser,
   zValidator('json', createBloodPressureSchema, validationHook),
   async (c) => {
     // The route owns ID generation (Decision #1).
@@ -42,7 +43,7 @@ bloodPressureRoutes.post(
       c.var.healthMonitorDb,
       id,
       c.req.valid('json'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     return c.json({ data: created }, 201);
   },
@@ -50,6 +51,7 @@ bloodPressureRoutes.post(
 
 bloodPressureRoutes.patch(
   '/:id',
+  requireUser,
   zValidator('param', idParamSchema, validationHook),
   zValidator('json', updateBloodPressureSchema, validationHook),
   async (c) => {
@@ -57,7 +59,7 @@ bloodPressureRoutes.patch(
       c.var.healthMonitorDb,
       c.req.valid('param').id,
       c.req.valid('json'),
-      scopeIsDemo(c.var.identity),
+      ownerIdOf(c.var.identity),
     );
     if (!updated) {
       return c.json(errorBody('Resource not found'), 404);

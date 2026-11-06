@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { omitUserId, type OwnerId } from '../utils/owner';
 import type { HealthMonitorDb } from '../db/health-monitor/client';
 import type { SymptomEntry } from '../db/health-monitor/schema';
 import {
@@ -15,37 +16,43 @@ import {
   withUpdateStamp,
 } from './health-monitor-shared';
 
+export type SymptomEntryView = Omit<SymptomEntry, 'userId'>;
+
 export async function createSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createSymptomSchema>,
-  isDemo: boolean,
-): Promise<SymptomEntry> {
-  return createSymptomEntryRow(db, withCreateStamps(id, input, isDemo));
+  ownerId: OwnerId,
+): Promise<SymptomEntryView> {
+  const row = await createSymptomEntryRow(db, withCreateStamps(id, input, ownerId));
+  return omitUserId(row);
 }
 
 export async function updateSymptomEntry(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateSymptomSchema>,
-  isDemo: boolean,
-): Promise<SymptomEntry | undefined> {
+  ownerId: OwnerId,
+): Promise<SymptomEntryView | undefined> {
   assertReasonRequiredWhenIgnored(input);
-  return updateSymptomEntryRow(db, id, withUpdateStamp(input), isDemo);
+  const row = await updateSymptomEntryRow(db, id, withUpdateStamp(input), ownerId);
+  return row && omitUserId(row);
 }
 
 export async function listSymptomEntries(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
-  isDemo: boolean,
-): Promise<SymptomEntry[]> {
-  return listSymptomEntriesRow(db, { ...query, isDemo });
+  ownerId: OwnerId,
+): Promise<SymptomEntryView[]> {
+  const rows = await listSymptomEntriesRow(db, { ...query, ownerId });
+  return rows.map(omitUserId);
 }
 
 export async function findSymptomEntryById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
-): Promise<SymptomEntry | undefined> {
-  return findSymptomEntryByIdRow(db, id, isDemo);
+  ownerId: OwnerId,
+): Promise<SymptomEntryView | undefined> {
+  const row = await findSymptomEntryByIdRow(db, id, ownerId);
+  return row && omitUserId(row);
 }

@@ -6,19 +6,19 @@ import {
 } from './health-monitor-shared';
 
 describe('withCreateStamps', () => {
-  it('adds id, isDemo, ignored, reason, and matching createdAt/updatedAt', () => {
-    const result = withCreateStamps('id-1', { measuredAt: '2026-06-15T08:00:00.000Z' }, true);
+  it('adds id, userId, ignored, reason, and matching createdAt/updatedAt', () => {
+    const result = withCreateStamps('id-1', { measuredAt: '2026-06-15T08:00:00.000Z' }, 'user-a');
     expect(result.id).toBe('id-1');
-    expect(result.isDemo).toBe(true);
+    expect(result.userId).toBe('user-a');
     expect(result.ignored).toBe(false);
     expect(result.reason).toBe('');
     expect(result.createdAt).toBe(result.updatedAt);
     expect(result.measuredAt).toBe('2026-06-15T08:00:00.000Z');
   });
 
-  it('passes through isDemo: false unchanged', () => {
-    const result = withCreateStamps('id-2', {}, false);
-    expect(result.isDemo).toBe(false);
+  it('stamps a null owner (demo scope) as null', () => {
+    const result = withCreateStamps('id-2', {}, null);
+    expect(result.userId).toBeNull();
   });
 });
 

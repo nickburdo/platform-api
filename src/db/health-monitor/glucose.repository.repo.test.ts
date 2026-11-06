@@ -20,7 +20,7 @@ function makeRow(overrides: Partial<NewGlucoseMeasurement> = {}): NewGlucoseMeas
     id: overrides.id ?? crypto.randomUUID(),
     measuredAt: '2026-06-15T08:00:00.000Z',
     fastingValue: 90,
-    isDemo: true,
+    userId: null,
     ignored: false,
     reason: '',
     createdAt: '2026-06-15T08:00:00.000Z',
@@ -34,14 +34,14 @@ describe('createGlucoseMeasurement / findGlucoseMeasurementById', () => {
     const created = await createGlucoseMeasurement(db, makeRow({ id: 'g-1', fastingValue: 91 }));
     expect(created.fastingValue).toBe(91);
 
-    const found = await findGlucoseMeasurementById(db, 'g-1', true);
+    const found = await findGlucoseMeasurementById(db, 'g-1', null);
     expect(found?.fastingValue).toBe(91);
   });
 
-  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
-    await createGlucoseMeasurement(db, makeRow({ id: 'g-1b', isDemo: false }));
-    expect(await findGlucoseMeasurementById(db, 'g-1b', true)).toBeUndefined();
-    expect((await findGlucoseMeasurementById(db, 'g-1b', false))?.id).toBe('g-1b');
+  it('returns undefined when the id exists but outside the requested owner scope', async () => {
+    await createGlucoseMeasurement(db, makeRow({ id: 'g-1b', userId: 'user-a' }));
+    expect(await findGlucoseMeasurementById(db, 'g-1b', null)).toBeUndefined();
+    expect((await findGlucoseMeasurementById(db, 'g-1b', 'user-a'))?.id).toBe('g-1b');
   });
 });
 
@@ -52,7 +52,7 @@ describe('updateGlucoseMeasurement', () => {
       db,
       'g-2',
       { ignored: true, reason: 'Incorrect reading' },
-      true,
+      null,
     );
     expect(updated?.ignored).toBe(true);
     expect(updated?.reason).toBe('Incorrect reading');
@@ -69,14 +69,14 @@ describe('updateGlucoseMeasurement', () => {
       db,
       makeRow({ id: 'g-3', fastingValue: null, afterMealValue: 130 }),
     );
-    const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 }, true);
+    const updated = await updateGlucoseMeasurement(db, 'g-3', { fastingValue: 95 }, null);
     expect(updated?.fastingValue).toBe(95);
     expect(updated?.afterMealValue).toBe(130);
   });
 
-  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
-    await createGlucoseMeasurement(db, makeRow({ id: 'g-2b', isDemo: false }));
-    expect(await updateGlucoseMeasurement(db, 'g-2b', { fastingValue: 95 }, true)).toBeUndefined();
+  it('returns undefined when the id exists but outside the requested owner scope', async () => {
+    await createGlucoseMeasurement(db, makeRow({ id: 'g-2b', userId: 'user-a' }));
+    expect(await updateGlucoseMeasurement(db, 'g-2b', { fastingValue: 95 }, null)).toBeUndefined();
   });
 });
 
@@ -85,26 +85,28 @@ describe('listGlucoseMeasurements', () => {
     await Promise.all([
       createGlucoseMeasurement(
         db,
-        makeRow({ id: 'd-1', measuredAt: '2026-06-01T08:00:00.000Z', isDemo: true }),
+        makeRow({ id: 'd-1', measuredAt: '2026-06-01T08:00:00.000Z', userId: null }),
       ),
       createGlucoseMeasurement(
         db,
-        makeRow({ id: 'd-2', measuredAt: '2026-06-15T08:00:00.000Z', isDemo: true }),
+        makeRow({ id: 'd-2', measuredAt: '2026-06-15T08:00:00.000Z', userId: null }),
       ),
+      createGlucoseMeasurement(db, makeRow({ id: 'd-3', measuredAt: '2026-06-30T23:30:00.000Z' })),
       createGlucoseMeasurement(
         db,
-        makeRow({ id: 'd-3', measuredAt: '2026-06-30T23:30:00.000Z', isDemo: false }),
+        makeRow({ id: 'u-1', measuredAt: '2026-06-10T08:00:00.000Z', userId: 'user-a' }),
       ),
     ]);
   });
 
   it('returns all rows ordered by measuredAt ascending when unfiltered', async () => {
-    const rows = await listGlucoseMeasurements(db);
+    const rows = await listGlucoseMeasurements(db, { ownerId: null });
     expect(rows.map((r) => r.id)).toEqual(['d-1', 'd-2', 'd-3']);
   });
 
   it('filters by date_from/date_to inclusively', async () => {
     const rows = await listGlucoseMeasurements(db, {
+      ownerId: null,
       date_from: '2026-06-01',
       date_to: '2026-06-15',
     });
@@ -112,17 +114,19 @@ describe('listGlucoseMeasurements', () => {
   });
 
   it('includes a record at 23:30 on date_to — end-of-day widening (Decision #21)', async () => {
-    const rows = await listGlucoseMeasurements(db, { date_to: '2026-06-30' });
+    const rows = await listGlucoseMeasurements(db, { ownerId: null, date_to: '2026-06-30' });
     expect(rows.map((r) => r.id)).toContain('d-3');
   });
 
   it('excludes a record dated the day after date_to', async () => {
-    const rows = await listGlucoseMeasurements(db, { date_to: '2026-06-29' });
+    const rows = await listGlucoseMeasurements(db, { ownerId: null, date_to: '2026-06-29' });
     expect(rows.map((r) => r.id)).not.toContain('d-3');
   });
 
-  it('filters by isDemo', async () => {
-    const rows = await listGlucoseMeasurements(db, { isDemo: false });
-    expect(rows.map((r) => r.id)).toEqual(['d-3']);
+  it('returns only the requested owner scope', async () => {
+    const own = await listGlucoseMeasurements(db, { ownerId: 'user-a' });
+    expect(own.map((r) => r.id)).toEqual(['u-1']);
+    const demo = await listGlucoseMeasurements(db, { ownerId: null });
+    expect(demo.map((r) => r.id)).toEqual(['d-1', 'd-2', 'd-3']);
   });
 });

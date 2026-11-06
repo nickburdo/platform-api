@@ -1,23 +1,36 @@
 import type { z } from 'zod';
 import type { HealthMonitorDb } from '../db/health-monitor/client';
 import { getDashboardData as getDashboardDataRow } from '../db/health-monitor/dashboard.repository';
-import type { DashboardData } from '../db/health-monitor/dashboard.repository';
+import type { BloodPressureMeasurementView } from './blood-pressure.service';
+import type { GlucoseMeasurementView } from './glucose.service';
+import type { SymptomEntryView } from './symptom.service';
+import type { WeightMeasurementView } from './weight.service';
 import type { dateRangeQuerySchema } from '../schemas/common.schema';
+import { omitUserId, type OwnerId } from '../utils/owner';
 
-// Delegates straight to dashboard.repository.ts's existing composition of
-// the four Health Monitor repositories, rather than composing the four
-// sibling services — those services add no read-time transformation over
-// their repositories in V1 (no isDemo scoping happens yet, per Decision
-// #10), so recomposing through them here would be a redundant extra layer
-// with identical behavior.
+export interface DashboardView {
+  glucoseMeasurements: GlucoseMeasurementView[];
+  bloodPressureMeasurements: BloodPressureMeasurementView[];
+  weightMeasurements: WeightMeasurementView[];
+  symptomEntries: SymptomEntryView[];
+}
+
+// Delegates to dashboard.repository.ts's composition of the four Health
+// Monitor repositories and strips userId from every row of every array.
 //
-// `isDemo` is a separate parameter, not a field on `dateRangeQuerySchema`:
-// it's never client-supplied (the server assigns it, e.g. from auth context
-// once V2 lands), so it doesn't belong in the schema that validates raw HTTP
-// query params — only in this internal service-level parameter.
+// `ownerId` is a separate parameter, not a field on `dateRangeQuerySchema`:
+// it is never client-supplied (it comes from the identity), so it does not
+// belong in the schema that validates raw HTTP query params.
 export async function getDashboardData(
   db: HealthMonitorDb,
-  query: z.infer<typeof dateRangeQuerySchema> & { isDemo?: boolean },
-): Promise<DashboardData> {
-  return getDashboardDataRow(db, query);
+  query: z.infer<typeof dateRangeQuerySchema>,
+  ownerId: OwnerId,
+): Promise<DashboardView> {
+  const data = await getDashboardDataRow(db, { ...query, ownerId });
+  return {
+    glucoseMeasurements: data.glucoseMeasurements.map(omitUserId),
+    bloodPressureMeasurements: data.bloodPressureMeasurements.map(omitUserId),
+    weightMeasurements: data.weightMeasurements.map(omitUserId),
+    symptomEntries: data.symptomEntries.map(omitUserId),
+  };
 }

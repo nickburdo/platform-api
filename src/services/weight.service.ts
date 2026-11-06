@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { omitUserId, type OwnerId } from '../utils/owner';
 import type { HealthMonitorDb } from '../db/health-monitor/client';
 import type { WeightMeasurement } from '../db/health-monitor/schema';
 import {
@@ -15,37 +16,43 @@ import {
   withUpdateStamp,
 } from './health-monitor-shared';
 
+export type WeightMeasurementView = Omit<WeightMeasurement, 'userId'>;
+
 export async function createWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createWeightSchema>,
-  isDemo: boolean,
-): Promise<WeightMeasurement> {
-  return createWeightMeasurementRow(db, withCreateStamps(id, input, isDemo));
+  ownerId: OwnerId,
+): Promise<WeightMeasurementView> {
+  const row = await createWeightMeasurementRow(db, withCreateStamps(id, input, ownerId));
+  return omitUserId(row);
 }
 
 export async function updateWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateWeightSchema>,
-  isDemo: boolean,
-): Promise<WeightMeasurement | undefined> {
+  ownerId: OwnerId,
+): Promise<WeightMeasurementView | undefined> {
   assertReasonRequiredWhenIgnored(input);
-  return updateWeightMeasurementRow(db, id, withUpdateStamp(input), isDemo);
+  const row = await updateWeightMeasurementRow(db, id, withUpdateStamp(input), ownerId);
+  return row && omitUserId(row);
 }
 
 export async function listWeightMeasurements(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
-  isDemo: boolean,
-): Promise<WeightMeasurement[]> {
-  return listWeightMeasurementsRow(db, { ...query, isDemo });
+  ownerId: OwnerId,
+): Promise<WeightMeasurementView[]> {
+  const rows = await listWeightMeasurementsRow(db, { ...query, ownerId });
+  return rows.map(omitUserId);
 }
 
 export async function findWeightMeasurementById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
-): Promise<WeightMeasurement | undefined> {
-  return findWeightMeasurementByIdRow(db, id, isDemo);
+  ownerId: OwnerId,
+): Promise<WeightMeasurementView | undefined> {
+  const row = await findWeightMeasurementByIdRow(db, id, ownerId);
+  return row && omitUserId(row);
 }

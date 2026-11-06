@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import { ownerFilter, type OwnerId } from '../../utils/owner';
 import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import { weightMeasurements, type NewWeightMeasurement, type WeightMeasurement } from './schema';
@@ -6,12 +7,12 @@ import { weightMeasurements, type NewWeightMeasurement, type WeightMeasurement }
 export type ListWeightParams = DateRangeFilterParams;
 
 function buildFilters(params: ListWeightParams) {
-  return buildDateRangeFilter(weightMeasurements.measuredAt, weightMeasurements.isDemo, params);
+  return buildDateRangeFilter(weightMeasurements.measuredAt, weightMeasurements.userId, params);
 }
 
 export async function listWeightMeasurements(
   db: HealthMonitorDb,
-  params: ListWeightParams = {},
+  params: ListWeightParams,
 ): Promise<WeightMeasurement[]> {
   return db
     .select()
@@ -20,17 +21,16 @@ export async function listWeightMeasurements(
     .orderBy(asc(weightMeasurements.measuredAt));
 }
 
-// By-id operations are scoped to the caller's isDemo world (v2-plan.md
-// Decision #11): a record outside the scope behaves as nonexistent.
+// By-id operations are scoped to the caller's owner scope (v4 Decision 1): a record outside the scope behaves as nonexistent.
 export async function findWeightMeasurementById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<WeightMeasurement | undefined> {
   const [row] = await db
     .select()
     .from(weightMeasurements)
-    .where(and(eq(weightMeasurements.id, id), eq(weightMeasurements.isDemo, isDemo)));
+    .where(and(eq(weightMeasurements.id, id), ownerFilter(weightMeasurements.userId, ownerId)));
   return row;
 }
 
@@ -47,12 +47,12 @@ export async function updateWeightMeasurement(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewWeightMeasurement>,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<WeightMeasurement | undefined> {
   const [row] = await db
     .update(weightMeasurements)
     .set(data)
-    .where(and(eq(weightMeasurements.id, id), eq(weightMeasurements.isDemo, isDemo)))
+    .where(and(eq(weightMeasurements.id, id), ownerFilter(weightMeasurements.userId, ownerId)))
     .returning();
   return row;
 }

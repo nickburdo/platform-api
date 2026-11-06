@@ -25,7 +25,7 @@ beforeEach(async () => {
 });
 
 const commonFields = {
-  isDemo: true,
+  userId: null as string | null,
   ignored: false,
   reason: '',
   createdAt: '2026-06-15T08:00:00.000Z',
@@ -71,7 +71,11 @@ describe('getDashboardData', () => {
       }),
     ]);
 
-    const data = await getDashboardData(db, { date_from: '2026-06-01', date_to: '2026-06-30' });
+    const data = await getDashboardData(db, {
+      ownerId: null,
+      date_from: '2026-06-01',
+      date_to: '2026-06-30',
+    });
 
     expect(data.glucoseMeasurements.map((r) => r.id)).toEqual(['g-1']);
     expect(data.bloodPressureMeasurements.map((r) => r.id)).toEqual(['bp-1']);
@@ -80,12 +84,65 @@ describe('getDashboardData', () => {
   });
 
   it('returns empty arrays for each resource when nothing matches', async () => {
-    const data = await getDashboardData(db, { date_from: '2026-01-01', date_to: '2026-01-31' });
+    const data = await getDashboardData(db, {
+      ownerId: null,
+      date_from: '2026-01-01',
+      date_to: '2026-01-31',
+    });
     expect(data).toEqual({
       glucoseMeasurements: [],
       bloodPressureMeasurements: [],
       weightMeasurements: [],
       symptomEntries: [],
     });
+  });
+
+  it('returns only the requested owner scope in every array', async () => {
+    const own = { ...commonFields, userId: 'user-a' };
+    await Promise.all([
+      createGlucoseMeasurement(db, {
+        id: 'g-d',
+        measuredAt: '2026-06-15T08:00:00.000Z',
+        fastingValue: 90,
+        ...commonFields,
+      }),
+      createGlucoseMeasurement(db, {
+        id: 'g-a',
+        measuredAt: '2026-06-15T08:00:00.000Z',
+        fastingValue: 91,
+        ...own,
+      }),
+      createBloodPressureMeasurement(db, {
+        id: 'bp-a',
+        measuredAt: '2026-06-15T08:00:00.000Z',
+        systolic: 120,
+        diastolic: 80,
+        pulse: 70,
+        ...own,
+      }),
+      createWeightMeasurement(db, {
+        id: 'w-a',
+        measuredAt: '2026-06-15T08:00:00.000Z',
+        value: 84.6,
+        ...own,
+      }),
+      createSymptomEntry(db, {
+        id: 's-a',
+        happenedAt: '2026-06-15T08:00:00.000Z',
+        type: 'headache',
+        intensity: 3,
+        ...own,
+      }),
+    ]);
+
+    const a = await getDashboardData(db, { ownerId: 'user-a' });
+    expect(a.glucoseMeasurements.map((r) => r.id)).toEqual(['g-a']);
+    expect(a.bloodPressureMeasurements.map((r) => r.id)).toEqual(['bp-a']);
+    expect(a.weightMeasurements.map((r) => r.id)).toEqual(['w-a']);
+    expect(a.symptomEntries.map((r) => r.id)).toEqual(['s-a']);
+
+    const demo = await getDashboardData(db, { ownerId: null });
+    expect(demo.glucoseMeasurements.map((r) => r.id)).toEqual(['g-d']);
+    expect(demo.bloodPressureMeasurements).toEqual([]);
   });
 });

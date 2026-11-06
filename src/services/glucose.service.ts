@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { omitUserId, type OwnerId } from '../utils/owner';
 import type { HealthMonitorDb } from '../db/health-monitor/client';
 import {
   createGlucoseMeasurement as createGlucoseMeasurementRow,
@@ -15,21 +16,24 @@ import {
   withUpdateStamp,
 } from './health-monitor-shared';
 
+export type GlucoseMeasurementView = Omit<GlucoseMeasurement, 'userId'>;
+
 export async function createGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof createGlucoseSchema>,
-  isDemo: boolean,
-): Promise<GlucoseMeasurement> {
-  return createGlucoseMeasurementRow(db, withCreateStamps(id, input, isDemo));
+  ownerId: OwnerId,
+): Promise<GlucoseMeasurementView> {
+  const row = await createGlucoseMeasurementRow(db, withCreateStamps(id, input, ownerId));
+  return omitUserId(row);
 }
 
 export async function updateGlucoseMeasurement(
   db: HealthMonitorDb,
   id: string,
   input: z.infer<typeof updateGlucoseSchema>,
-  isDemo: boolean,
-): Promise<GlucoseMeasurement | undefined> {
+  ownerId: OwnerId,
+): Promise<GlucoseMeasurementView | undefined> {
   assertReasonRequiredWhenIgnored(input);
 
   // Preserve the "exactly one of fastingValue/afterMealValue" invariant
@@ -45,21 +49,24 @@ export async function updateGlucoseMeasurement(
     patch.fastingValue = null;
   }
 
-  return updateGlucoseMeasurementRow(db, id, withUpdateStamp(patch), isDemo);
+  const row = await updateGlucoseMeasurementRow(db, id, withUpdateStamp(patch), ownerId);
+  return row && omitUserId(row);
 }
 
 export async function listGlucoseMeasurements(
   db: HealthMonitorDb,
   query: z.infer<typeof dateRangeQuerySchema>,
-  isDemo: boolean,
-): Promise<GlucoseMeasurement[]> {
-  return listGlucoseMeasurementsRow(db, { ...query, isDemo });
+  ownerId: OwnerId,
+): Promise<GlucoseMeasurementView[]> {
+  const rows = await listGlucoseMeasurementsRow(db, { ...query, ownerId });
+  return rows.map(omitUserId);
 }
 
 export async function findGlucoseMeasurementById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
-): Promise<GlucoseMeasurement | undefined> {
-  return findGlucoseMeasurementByIdRow(db, id, isDemo);
+  ownerId: OwnerId,
+): Promise<GlucoseMeasurementView | undefined> {
+  const row = await findGlucoseMeasurementByIdRow(db, id, ownerId);
+  return row && omitUserId(row);
 }

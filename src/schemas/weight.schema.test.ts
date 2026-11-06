@@ -52,6 +52,6 @@ describe('updateWeightSchema', () => {
   });
 
   it('rejects unknown keys on update (Decision #32)', () => {
-    expect(updateWeightSchema.safeParse({ value: 84.6, isDemo: true }).success).toBe(false);
+    expect(updateWeightSchema.safeParse({ value: 84.6, userId: 'x' }).success).toBe(false);
   });
 });

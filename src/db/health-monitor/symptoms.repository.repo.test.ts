@@ -21,7 +21,7 @@ function makeRow(overrides: Partial<NewSymptomEntry> = {}): NewSymptomEntry {
     happenedAt: '2026-06-15T08:00:00.000Z',
     type: 'headache',
     intensity: 3,
-    isDemo: true,
+    userId: null,
     ignored: false,
     reason: '',
     createdAt: '2026-06-15T08:00:00.000Z',
@@ -35,14 +35,14 @@ describe('createSymptomEntry / findSymptomEntryById', () => {
     const created = await createSymptomEntry(db, makeRow({ id: 's-1', type: 'bloating' }));
     expect(created.type).toBe('bloating');
 
-    const found = await findSymptomEntryById(db, 's-1', true);
+    const found = await findSymptomEntryById(db, 's-1', null);
     expect(found?.type).toBe('bloating');
   });
 
-  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
-    await createSymptomEntry(db, makeRow({ id: 's-1b', isDemo: false }));
-    expect(await findSymptomEntryById(db, 's-1b', true)).toBeUndefined();
-    expect((await findSymptomEntryById(db, 's-1b', false))?.id).toBe('s-1b');
+  it('returns undefined when the id exists but outside the requested owner scope', async () => {
+    await createSymptomEntry(db, makeRow({ id: 's-1b', userId: 'user-a' }));
+    expect(await findSymptomEntryById(db, 's-1b', null)).toBeUndefined();
+    expect((await findSymptomEntryById(db, 's-1b', 'user-a'))?.id).toBe('s-1b');
   });
 });
 
@@ -53,16 +53,16 @@ describe('updateSymptomEntry', () => {
       db,
       's-2',
       { ignored: true, reason: 'Created by mistake' },
-      true,
+      null,
     );
     expect(updated?.ignored).toBe(true);
     expect(updated?.type).toBe('headache');
   });
 
-  it('returns undefined when the id exists but outside the requested isDemo scope', async () => {
-    await createSymptomEntry(db, makeRow({ id: 's-2b', isDemo: false }));
+  it('returns undefined when the id exists but outside the requested owner scope', async () => {
+    await createSymptomEntry(db, makeRow({ id: 's-2b', userId: 'user-a' }));
     expect(
-      await updateSymptomEntry(db, 's-2b', { ignored: true, reason: 'x' }, true),
+      await updateSymptomEntry(db, 's-2b', { ignored: true, reason: 'x' }, null),
     ).toBeUndefined();
   });
 });
@@ -73,7 +73,20 @@ describe('listSymptomEntries', () => {
       createSymptomEntry(db, makeRow({ id: 'd-1', happenedAt: '2026-06-01T08:00:00.000Z' })),
       createSymptomEntry(db, makeRow({ id: 'd-2', happenedAt: '2026-06-15T08:00:00.000Z' })),
     ]);
-    const rows = await listSymptomEntries(db, { date_from: '2026-06-10' });
+    const rows = await listSymptomEntries(db, { ownerId: null, date_from: '2026-06-10' });
     expect(rows.map((r) => r.id)).toEqual(['d-2']);
+  });
+
+  it('returns only the requested owner scope', async () => {
+    await createSymptomEntry(
+      db,
+      makeRow({ id: 'u-1', happenedAt: '2026-06-12T08:00:00.000Z', userId: 'user-a' }),
+    );
+    await createSymptomEntry(db, makeRow({ id: 'd-9', happenedAt: '2026-06-13T08:00:00.000Z' }));
+    const own = await listSymptomEntries(db, { ownerId: 'user-a' });
+    expect(own.map((r) => r.id)).toEqual(['u-1']);
+    const demo = await listSymptomEntries(db, { ownerId: null });
+    expect(demo.map((r) => r.id)).toEqual(['d-9']);
+    expect(await listSymptomEntries(db, { ownerId: 'user-b' })).toEqual([]);
   });
 });

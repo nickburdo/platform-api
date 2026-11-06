@@ -27,7 +27,7 @@ describe('zodErrorToResponse', () => {
     const result = createGlucoseSchema.safeParse({
       measuredAt: '2026-07-01T08:00:00.000Z',
       fastingValue: 90,
-      isDemo: true,
+      userId: 'x',
     });
     expect(result.success).toBe(false);
     if (!result.success) {

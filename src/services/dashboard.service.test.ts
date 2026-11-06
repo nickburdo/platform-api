@@ -28,38 +28,45 @@ describe('getDashboardData', () => {
       db,
       'g-1',
       { measuredAt: '2026-06-15T08:00:00.000Z', fastingValue: 90 },
-      true,
+      'user-a',
     );
 
-    const data = await getDashboardData(db, { isDemo: true });
+    const data = await getDashboardData(db, {}, 'user-a');
     expect(data.glucoseMeasurements.map((r) => r.id)).toEqual(['g-1']);
     expect(data.bloodPressureMeasurements).toEqual([]);
     expect(data.weightMeasurements).toEqual([]);
     expect(data.symptomEntries).toEqual([]);
   });
 
-  it('scopes by isDemo when provided', async () => {
+  it('scopes by owner and strips userId from every row', async () => {
     await createGlucoseMeasurement(
       db,
-      'g-demo',
+      'g-user',
       { measuredAt: '2026-06-15T08:00:00.000Z', fastingValue: 90 },
-      true,
+      'user-a',
     );
     await createGlucoseMeasurementRow(db, {
-      id: 'g-real',
+      id: 'g-demo',
       measuredAt: '2026-06-15T08:00:00.000Z',
       fastingValue: 95,
-      isDemo: false,
+      userId: null,
       ignored: false,
       reason: '',
       createdAt: '2026-06-15T08:00:00.000Z',
       updatedAt: '2026-06-15T08:00:00.000Z',
     });
 
-    const demoData = await getDashboardData(db, { isDemo: true });
-    expect(demoData.glucoseMeasurements.map((r) => r.id)).toEqual(['g-demo']);
+    const userData = await getDashboardData(db, {}, 'user-a');
+    expect(userData.glucoseMeasurements.map((r) => r.id)).toEqual(['g-user']);
+    for (const row of userData.glucoseMeasurements) {
+      expect(row).not.toHaveProperty('userId');
+      expect(row).not.toHaveProperty('isDemo');
+    }
 
-    const realData = await getDashboardData(db, { isDemo: false });
-    expect(realData.glucoseMeasurements.map((r) => r.id)).toEqual(['g-real']);
+    const guestData = await getDashboardData(db, {}, null);
+    expect(guestData.glucoseMeasurements.map((r) => r.id)).toEqual(['g-demo']);
+    for (const row of guestData.glucoseMeasurements) {
+      expect(row).not.toHaveProperty('userId');
+    }
   });
 });

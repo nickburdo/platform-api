@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import { ownerFilter, type OwnerId } from '../../utils/owner';
 import { buildDateRangeFilter, type DateRangeFilterParams } from '../../utils/repository-filters';
 import type { HealthMonitorDb } from './client';
 import {
@@ -12,14 +13,14 @@ export type ListBloodPressureParams = DateRangeFilterParams;
 function buildFilters(params: ListBloodPressureParams) {
   return buildDateRangeFilter(
     bloodPressureMeasurements.measuredAt,
-    bloodPressureMeasurements.isDemo,
+    bloodPressureMeasurements.userId,
     params,
   );
 }
 
 export async function listBloodPressureMeasurements(
   db: HealthMonitorDb,
-  params: ListBloodPressureParams = {},
+  params: ListBloodPressureParams,
 ): Promise<BloodPressureMeasurement[]> {
   return db
     .select()
@@ -28,17 +29,21 @@ export async function listBloodPressureMeasurements(
     .orderBy(asc(bloodPressureMeasurements.measuredAt));
 }
 
-// By-id operations are scoped to the caller's isDemo world (v2-plan.md
-// Decision #11): a record outside the scope behaves as nonexistent.
+// By-id operations are scoped to the caller's owner scope (v4 Decision 1): a record outside the scope behaves as nonexistent.
 export async function findBloodPressureMeasurementById(
   db: HealthMonitorDb,
   id: string,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<BloodPressureMeasurement | undefined> {
   const [row] = await db
     .select()
     .from(bloodPressureMeasurements)
-    .where(and(eq(bloodPressureMeasurements.id, id), eq(bloodPressureMeasurements.isDemo, isDemo)));
+    .where(
+      and(
+        eq(bloodPressureMeasurements.id, id),
+        ownerFilter(bloodPressureMeasurements.userId, ownerId),
+      ),
+    );
   return row;
 }
 
@@ -55,12 +60,17 @@ export async function updateBloodPressureMeasurement(
   db: HealthMonitorDb,
   id: string,
   data: Partial<NewBloodPressureMeasurement>,
-  isDemo: boolean,
+  ownerId: OwnerId,
 ): Promise<BloodPressureMeasurement | undefined> {
   const [row] = await db
     .update(bloodPressureMeasurements)
     .set(data)
-    .where(and(eq(bloodPressureMeasurements.id, id), eq(bloodPressureMeasurements.isDemo, isDemo)))
+    .where(
+      and(
+        eq(bloodPressureMeasurements.id, id),
+        ownerFilter(bloodPressureMeasurements.userId, ownerId),
+      ),
+    )
     .returning();
   return row;
 }

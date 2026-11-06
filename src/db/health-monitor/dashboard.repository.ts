@@ -1,4 +1,5 @@
 import type { DateRangeInput } from '../../utils/date-range';
+import type { OwnerId } from '../../utils/owner';
 import { listBloodPressureMeasurements } from './blood-pressure.repository';
 import type { HealthMonitorDb } from './client';
 import { listGlucoseMeasurements } from './glucose.repository';
@@ -11,9 +12,7 @@ import type {
 import { listSymptomEntries } from './symptoms.repository';
 import { listWeightMeasurements } from './weight.repository';
 
-export interface DashboardParams extends DateRangeInput {
-  isDemo?: boolean;
-}
+export type DashboardParams = DateRangeInput & { ownerId: OwnerId };
 
 export interface DashboardData {
   glucoseMeasurements: GlucoseMeasurement[];
@@ -27,7 +26,7 @@ export interface DashboardData {
 // execute queries).
 export async function getDashboardData(
   db: HealthMonitorDb,
-  params: DashboardParams = {},
+  params: DashboardParams,
 ): Promise<DashboardData> {
   const [glucoseMeasurements, bloodPressureMeasurements, weightMeasurements, symptomEntries] =
     await Promise.all([
