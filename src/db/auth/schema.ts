@@ -1,23 +1,30 @@
-import { sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { check, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
-// Only 'ADMIN' is ever stored in V2 — the column is an enum for schema
-// durability if multi-role support ever lands (ADR-012). GUEST is not a
-// persisted value; it is the absence of a valid token.
-export const USER_ROLES = ['ADMIN'] as const;
-
+// V4 (ADR-014): open username accounts, no email, no roles. A user signs in
+// with a password, with Google (google_sub), or both. The username is stored
+// as entered; uniqueness and lookup are case-insensitive through the
+// expression index on lower(username) (v4-plan.md Decision 5). Usernames are
+// ASCII-only, so SQLite's ASCII-only lower() is sufficient.
 export const users = sqliteTable(
   'users',
   {
     id: text('id').primaryKey(),
-    // Stored lowercase — normalization happens in the bootstrap script and
-    // at login before lookup (v2-plan.md Decision #12).
-    email: text('email').notNull(),
-    passwordHash: text('password_hash').notNull(),
-    role: text('role', { enum: USER_ROLES }).notNull(),
+    username: text('username').notNull(),
+    passwordHash: text('password_hash'),
+    googleSub: text('google_sub'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
-  (table) => [uniqueIndex('users_email_idx').on(table.email)],
+  (table) => [
+    uniqueIndex('users_username_lower_idx').on(sql`lower(${table.username})`),
+    uniqueIndex('users_google_sub_idx').on(table.googleSub),
+    // Decision 7: an account must always be able to sign in somehow.
+    check(
+      'users_credential_check',
+      sql`${table.passwordHash} IS NOT NULL OR ${table.googleSub} IS NOT NULL`,
+    ),
+  ],
 );
 
 export type User = typeof users.$inferSelect;

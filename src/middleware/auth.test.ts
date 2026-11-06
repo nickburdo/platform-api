@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { scopeIsDemo, type Identity } from './auth';
+import { ownerIdOf, scopeIsDemo, type Identity } from './auth';
 
-describe('scopeIsDemo', () => {
-  it('scopes guests to the demo world', () => {
-    const guest: Identity = { scope: 'guest' };
-    expect(scopeIsDemo(guest)).toBe(true);
+describe('ownerIdOf', () => {
+  it('maps a guest to the demo scope (null)', () => {
+    expect(ownerIdOf({ scope: 'guest' })).toBeNull();
   });
 
-  it('scopes the admin to the real world', () => {
-    const admin: Identity = { scope: 'admin', userId: 'user-1' };
-    expect(scopeIsDemo(admin)).toBe(false);
+  it('maps a user to their id', () => {
+    expect(ownerIdOf({ scope: 'user', userId: 'user-1' })).toBe('user-1');
+  });
+});
+
+describe('scopeIsDemo (temporary)', () => {
+  it('is true for guests and false for users', () => {
+    const guest: Identity = { scope: 'guest' };
+    const user: Identity = { scope: 'user', userId: 'user-1' };
+    expect(scopeIsDemo(guest)).toBe(true);
+    expect(scopeIsDemo(user)).toBe(false);
   });
 });

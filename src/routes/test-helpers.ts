@@ -43,27 +43,27 @@ export async function requestJson(
   );
 }
 
-// Inserts a single admin user directly into the ephemeral test auth-db and
-// issues a real token for it — the fast path for route tests that need an
-// authenticated admin request without exercising /auth/login itself.
-export async function seedAdminAndGetToken(
-  overrides: { email?: string; password?: string } = {},
-): Promise<{ userId: string; token: string; email: string; password: string }> {
+// Inserts a user directly into the ephemeral test auth-db and issues a real
+// token for it — the fast path for route tests that need an authenticated
+// request without exercising /auth/login itself.
+export async function seedUserAndGetToken(
+  overrides: { username?: string; password?: string } = {},
+): Promise<{ userId: string; token: string; username: string; password: string }> {
   const userId = crypto.randomUUID();
-  const email = overrides.email ?? 'admin@example.com';
+  const username = overrides.username ?? 'testuser';
   const password = overrides.password ?? 'super-secret-password';
   const now = new Date().toISOString();
   const authDb = createAuthDb(env.AUTH_DB);
   await authDb.insert(users).values({
     id: userId,
-    email,
+    username,
     passwordHash: await hashPassword(password),
-    role: 'ADMIN',
+    googleSub: null,
     createdAt: now,
     updatedAt: now,
   });
   const token = await issueToken(userId, env.JWT_SECRET);
-  return { userId, token, email, password };
+  return { userId, token, username, password };
 }
 
 export function bearer(token: string): Record<string, string> {

@@ -4,11 +4,25 @@ import { issueToken, verifyToken } from './jwt';
 
 const SECRET = 'unit-test-secret';
 
+function sign(claims: Record<string, unknown>, subject?: string) {
+  const jwt = new SignJWT(claims)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('1h');
+  if (subject !== undefined) {
+    jwt.setSubject(subject);
+  }
+  return jwt.sign(new TextEncoder().encode(SECRET));
+}
+
 describe('issueToken / verifyToken', () => {
-  it('round-trips a valid token', async () => {
+  it('round-trips a valid token (no role claim)', async () => {
     const token = await issueToken('user-1', SECRET);
-    const payload = await verifyToken(token, SECRET);
-    expect(payload).toEqual({ sub: 'user-1', role: 'ADMIN' });
+    expect(await verifyToken(token, SECRET)).toEqual({ sub: 'user-1' });
+  });
+
+  it('verifies a token without any role claim', async () => {
+    expect(await verifyToken(await sign({}, 'user-1'), SECRET)).toEqual({ sub: 'user-1' });
   });
 
   it('rejects a token signed with a different secret', async () => {
@@ -22,7 +36,7 @@ describe('issueToken / verifyToken', () => {
   });
 
   it('rejects an expired token', async () => {
-    const expired = await new SignJWT({ role: 'ADMIN' })
+    const expired = await new SignJWT({})
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject('user-1')
       .setIssuedAt(Math.floor(Date.now() / 1000) - 120)
@@ -31,13 +45,8 @@ describe('issueToken / verifyToken', () => {
     expect(await verifyToken(expired, SECRET)).toBeNull();
   });
 
-  it('rejects a structurally valid token without the expected claims', async () => {
-    const noRole = await new SignJWT({})
-      .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('user-1')
-      .setIssuedAt()
-      .setExpirationTime('1h')
-      .sign(new TextEncoder().encode(SECRET));
-    expect(await verifyToken(noRole, SECRET)).toBeNull();
+  it('rejects a token with an empty or missing sub', async () => {
+    expect(await verifyToken(await sign({}, ''), SECRET)).toBeNull();
+    expect(await verifyToken(await sign({}), SECRET)).toBeNull();
   });
 });

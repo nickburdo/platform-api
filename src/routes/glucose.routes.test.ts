@@ -6,7 +6,7 @@ import {
   bearer,
   request,
   requestJson,
-  seedAdminAndGetToken,
+  seedUserAndGetToken,
   type DataEnvelope,
 } from './test-helpers';
 
@@ -101,7 +101,7 @@ describe('PATCH /glucose/:id', () => {
 
 describe('authorization matrix (v2-plan.md Decisions #4/#11)', () => {
   it('an admin token creates real (isDemo: false) data, invisible to guest reads', async () => {
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
     const created = await requestJson(
       'POST',
       '/glucose',

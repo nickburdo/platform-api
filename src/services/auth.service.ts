@@ -1,19 +1,33 @@
 import type { z } from 'zod';
 import type { AuthDb } from '../db/auth/client';
-import { findUserByEmail, findUserById } from '../db/auth/users.repository';
 import type { User } from '../db/auth/schema';
-import type { loginSchema } from '../schemas/auth.schema';
+import {
+  findUserByGoogleSub,
+  findUserById,
+  findUserByUsername,
+  insertUser,
+  isUniqueViolation,
+} from '../db/auth/users.repository';
+import type { loginSchema, registerSchema } from '../schemas/auth.schema';
 import { issueToken } from '../utils/jwt';
-import { verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword } from '../utils/password';
 
-// The public shape of a user — passwordHash never leaves the service layer.
-export type PublicUser = Omit<User, 'passwordHash'>;
+// The public shape of a user — passwordHash and googleSub never leave the
+// service layer; hasPassword tells the frontend whether the account is
+// Google-only.
+export interface PublicUser {
+  id: string;
+  username: string;
+  hasPassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export function toPublicUser(user: User): PublicUser {
   return {
     id: user.id,
-    email: user.email,
-    role: user.role,
+    username: user.username,
+    hasPassword: user.passwordHash !== null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -24,53 +38,75 @@ export interface LoginResult {
   user: PublicUser;
 }
 
+// Decision 6: no availability pre-check — insert and map the unique
+// violation, which is race-free.
+export async function register(
+  db: AuthDb,
+  input: z.infer<typeof registerSchema>,
+  jwtSecret: string,
+): Promise<LoginResult | 'username_taken'> {
+  const now = new Date().toISOString();
+  let user: User;
+  try {
+    user = await insertUser(db, {
+      id: crypto.randomUUID(),
+      username: input.username,
+      passwordHash: await hashPassword(input.password),
+      googleSub: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return 'username_taken';
+    }
+    throw err;
+  }
+  const token = await issueToken(user.id, jwtSecret);
+  return { token, user: toPublicUser(user) };
+}
+
 // A fixed, pre-computed stored hash (real self-describing format, no
-// corresponding real password) verified against when the email is unknown.
-// Without this, an unknown email would return before ever calling
-// verifyPassword while a known email always pays the ~100k-iteration PBKDF2
-// cost — a timing side channel that leaks which emails are registered even
-// though both cases return the identical 401 body. Verifying against this
-// constant keeps the two paths' cost equal.
+// corresponding real password) verified against when the username is unknown
+// or the account has no password. Without this, those cases would return
+// before ever calling verifyPassword while a known password account always
+// pays the ~100k-iteration PBKDF2 cost — a timing side channel that leaks
+// which usernames exist even though every case returns the identical 401.
 const DUMMY_PASSWORD_HASH =
   'pbkdf2-sha256:100000:qe5pSrFIwhct7g7escrAwg==:A3bKG+lWUl+5dxOMlifCo+o11nYOVyNuYcakfelMFNM=';
 
-// Returns null for unknown email and wrong password alike — the route maps
-// both to the same generic 401 "Invalid credentials" (no user enumeration).
+// Returns null for unknown username, wrong password and Google-only accounts
+// alike — the route maps all of them to the same generic 401.
 export async function login(
   db: AuthDb,
   input: z.infer<typeof loginSchema>,
   jwtSecret: string,
 ): Promise<LoginResult | null> {
-  const email = input.email.toLowerCase();
-  const user = await findUserByEmail(db, email);
-  const passwordOk = await verifyPassword(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
-  if (!user || !passwordOk) {
+  const user = await findUserByUsername(db, input.username);
+  const storedHash = user?.passwordHash ?? null;
+  const passwordOk = await verifyPassword(input.password, storedHash ?? DUMMY_PASSWORD_HASH);
+  if (!user || storedHash === null || !passwordOk) {
     return null;
   }
   const token = await issueToken(user.id, jwtSecret);
   return { token, user: toPublicUser(user) };
 }
 
-// Always reads fresh from auth-db (the token's claims may be up to 30 days
-// stale). Returns undefined if the user row no longer exists.
+// Always reads fresh from auth-db. Returns undefined if the user row no
+// longer exists.
 export async function getMe(db: AuthDb, userId: string): Promise<PublicUser | undefined> {
   const user = await findUserById(db, userId);
   return user ? toPublicUser(user) : undefined;
 }
 
-// Google has already authenticated `email` (v3-plan.md Decision #7/#11) —
-// no password check here. Matches the single admin's existing row by email
-// only (Decision #1); returns null on no match, and the caller must not
-// create a user in that case. No timing defense needed (unlike `login`):
-// there's no password comparison to leak a timing side channel from, and
-// reaching this function at all already requires a signed state token this
-// server issued, not a public, guessable input.
+// TEMPORARY minimal form (Task 6 rewrites the Google flow): looks the user up
+// by Google sub and never creates one.
 export async function loginWithGoogle(
   db: AuthDb,
-  email: string,
+  googleSub: string,
   jwtSecret: string,
 ): Promise<LoginResult | null> {
-  const user = await findUserByEmail(db, email.toLowerCase());
+  const user = await findUserByGoogleSub(db, googleSub);
   if (!user) {
     return null;
   }

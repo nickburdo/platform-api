@@ -2,9 +2,10 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
+import { issueToken } from '../utils/jwt';
 import { issueOAuthState } from '../utils/oauth-state';
 import { resolveGoogleCallback } from './auth.routes';
-import { bearer, request, requestJson, seedAdminAndGetToken } from './test-helpers';
+import { bearer, request, requestJson, seedUserAndGetToken } from './test-helpers';
 
 interface DataEnvelope {
   data: Record<string, unknown>;
@@ -19,38 +20,125 @@ beforeEach(async () => {
 });
 
 describe('POST /auth/register', () => {
-  it('is not implemented — falls through to the global 404 (Decision #3)', async () => {
+  it('creates the account: 201 with a token and the public user only', async () => {
     const res = await requestJson('POST', '/auth/register', {
-      email: 'new@example.com',
-      password: 'whatever12345',
+      username: 'Nick',
+      password: 'password1',
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as DataEnvelope;
+    expect(typeof data.token).toBe('string');
+    const user = data.user as Record<string, unknown>;
+    expect(user).toMatchObject({ username: 'Nick', hasPassword: true });
+    expect(typeof user.id).toBe('string');
+    expect(typeof user.createdAt).toBe('string');
+    expect(typeof user.updatedAt).toBe('string');
+    for (const key of ['passwordHash', 'googleSub', 'email', 'role']) {
+      expect(user).not.toHaveProperty(key);
+    }
+  });
+
+  it('the issued token works on GET /auth/me', async () => {
+    const res = await requestJson('POST', '/auth/register', {
+      username: 'Nick',
+      password: 'password1',
+    });
+    const { data } = (await res.json()) as DataEnvelope;
+    const me = await request('/auth/me', { headers: bearer(data.token as string) });
+    expect(me.status).toBe(200);
+  });
+
+  it('rejects a username differing only in case with 409', async () => {
+    await requestJson('POST', '/auth/register', { username: 'Nick', password: 'password1' });
+    const res = await requestJson('POST', '/auth/register', {
+      username: 'nick',
+      password: 'password2',
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('Username is already taken');
+  });
+
+  it('rejects an invalid username or short password with 400', async () => {
+    expect(
+      (await requestJson('POST', '/auth/register', { username: 'ab', password: 'password1' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await requestJson('POST', '/auth/register', { username: 'nick', password: '1234567' }))
+        .status,
+    ).toBe(400);
+  });
+
+  it('rejects unknown keys such as a client-supplied role (strict)', async () => {
+    const res = await requestJson('POST', '/auth/register', {
+      username: 'nick',
+      password: 'password1',
+      role: 'ADMIN',
+    });
+    expect(res.status).toBe(400);
   });
 });
 
 describe('POST /auth/login', () => {
   it('issues a token and the public user on correct credentials', async () => {
-    const { email, password } = await seedAdminAndGetToken();
-    const res = await requestJson('POST', '/auth/login', { email, password });
+    const { username, password } = await seedUserAndGetToken();
+    const res = await requestJson('POST', '/auth/login', { username, password });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as DataEnvelope;
     expect(typeof data.token).toBe('string');
     const user = data.user as Record<string, unknown>;
-    expect(user.email).toBe(email);
+    expect(user.username).toBe(username);
     expect(user).not.toHaveProperty('passwordHash');
   });
 
+  it('matches the username case-insensitively (Nick registered, NICK logs in)', async () => {
+    await requestJson('POST', '/auth/register', { username: 'Nick', password: 'password1' });
+    const res = await requestJson('POST', '/auth/login', {
+      username: 'NICK',
+      password: 'password1',
+    });
+    expect(res.status).toBe(200);
+  });
+
   it('returns a generic 401 for a wrong password (no user enumeration)', async () => {
-    const { email } = await seedAdminAndGetToken();
-    const res = await requestJson('POST', '/auth/login', { email, password: 'wrong' });
+    const { username } = await seedUserAndGetToken();
+    const res = await requestJson('POST', '/auth/login', { username, password: 'wrong' });
     expect(res.status).toBe(401);
     const body = (await res.json()) as ErrorEnvelope;
     expect(body.error.message).toBe('Invalid credentials');
   });
 
-  it('returns the same generic 401 for an unknown email', async () => {
+  it('returns the same generic 401 for an unknown username', async () => {
     const res = await requestJson('POST', '/auth/login', {
-      email: 'nobody@example.com',
+      username: 'nobody',
+      password: 'whatever12345',
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('Invalid credentials');
+  });
+
+  it('returns the same generic 401 for a malformed username', async () => {
+    const res = await requestJson('POST', '/auth/login', {
+      username: 'not a valid name!',
+      password: 'whatever12345',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns the same generic 401 for a Google-only account (no password)', async () => {
+    const now = new Date().toISOString();
+    await (await freshAuthDb()).insert(users).values({
+      id: 'google-1',
+      username: 'googler',
+      passwordHash: null,
+      googleSub: 'sub-1',
+      createdAt: now,
+      updatedAt: now,
+    });
+    const res = await requestJson('POST', '/auth/login', {
+      username: 'googler',
       password: 'whatever12345',
     });
     expect(res.status).toBe(401);
@@ -59,35 +147,50 @@ describe('POST /auth/login', () => {
   });
 
   it('rejects a malformed body with 400', async () => {
-    const res = await requestJson('POST', '/auth/login', { email: 'not-an-email' });
+    const res = await requestJson('POST', '/auth/login', { username: 'nick' });
     expect(res.status).toBe(400);
   });
 
   it('rejects unknown keys such as a client-supplied role (strict)', async () => {
-    const { email, password } = await seedAdminAndGetToken();
-    const res = await requestJson('POST', '/auth/login', { email, password, role: 'ADMIN' });
+    const { username, password } = await seedUserAndGetToken();
+    const res = await requestJson('POST', '/auth/login', { username, password, role: 'ADMIN' });
     expect(res.status).toBe(400);
   });
 });
 
 describe('GET /auth/me', () => {
-  it('returns the current user for a valid admin token', async () => {
-    const { token, email } = await seedAdminAndGetToken();
+  it('returns the current user for a valid token', async () => {
+    const { token, username } = await seedUserAndGetToken();
     const res = await request('/auth/me', { headers: bearer(token) });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as DataEnvelope;
-    expect(data.email).toBe(email);
+    expect(data.username).toBe(username);
+    expect(data.hasPassword).toBe(true);
     expect(data).not.toHaveProperty('passwordHash');
   });
 
-  it('returns 401 without a token (guest)', async () => {
+  it('returns 401 Authentication required without a token (guest)', async () => {
     const res = await request('/auth/me');
     expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('Authentication required');
   });
 
   it('returns 401 for a malformed/invalid token', async () => {
     const res = await request('/auth/me', { headers: bearer('not-a-jwt') });
     expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('Invalid or expired token');
+  });
+});
+
+describe('identity resolution', () => {
+  it('rejects a validly signed token of a user that does not exist with 401', async () => {
+    const token = await issueToken(crypto.randomUUID(), env.JWT_SECRET);
+    const res = await request('/jobs', { headers: bearer(token) });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as ErrorEnvelope;
+    expect(body.error.message).toBe('Invalid or expired token');
   });
 });
 
@@ -123,19 +226,33 @@ describe('GET /auth/google/callback', () => {
   it('rejects an expired/wrong-purpose state with 401', async () => {
     // A real access token (wrong `purpose`) is a structurally valid JWT
     // signed with the same secret — must still be rejected as state.
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
     const res = await request(`/auth/google/callback?code=irrelevant&state=${token}`);
     expect(res.status).toBe(401);
   });
 });
 
-describe('resolveGoogleCallback', () => {
+describe('resolveGoogleCallback (temporary sub lookup until Task 6)', () => {
   const REDIRECT_URI = 'https://example.com/auth/google/callback';
   const oauthEnv = {
     GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
     JWT_SECRET: env.JWT_SECRET,
   };
+
+  async function seedGoogleUser(sub: string) {
+    const db = await freshAuthDb();
+    const now = new Date().toISOString();
+    await db.insert(users).values({
+      id: 'google-1',
+      username: 'googler',
+      passwordHash: null,
+      googleSub: sub,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return db;
+  }
 
   it('never calls exchange when the state is invalid', async () => {
     const db = await freshAuthDb();
@@ -148,11 +265,10 @@ describe('resolveGoogleCallback', () => {
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it('issues a token when the exchanged email matches the admin', async () => {
-    const db = await freshAuthDb();
-    const { email } = await seedAdminAndGetToken();
+  it('issues a token when the exchanged sub matches an existing user', async () => {
+    const db = await seedGoogleUser('sub-123');
     const state = await issueOAuthState(env.JWT_SECRET);
-    const exchange = vi.fn().mockResolvedValue({ email });
+    const exchange = vi.fn().mockResolvedValue({ sub: 'sub-123' });
 
     const outcome = await resolveGoogleCallback(
       { code: 'auth-code', state },
@@ -161,30 +277,16 @@ describe('resolveGoogleCallback', () => {
 
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
-      expect(outcome.result.user.email).toBe(email);
+      expect(outcome.result.user.username).toBe('googler');
       expect(outcome.result.user).not.toHaveProperty('passwordHash');
     }
     expect(exchange).toHaveBeenCalledWith('auth-code', oauthEnv, REDIRECT_URI);
   });
 
-  it('matches the admin email case-insensitively', async () => {
-    const db = await freshAuthDb();
-    await seedAdminAndGetToken({ email: 'admin@example.com' });
+  it('rejects with no user created when the sub has no matching user', async () => {
+    const db = await seedGoogleUser('sub-123');
     const state = await issueOAuthState(env.JWT_SECRET);
-    const exchange = vi.fn().mockResolvedValue({ email: 'Admin@Example.com' });
-
-    const outcome = await resolveGoogleCallback(
-      { code: 'auth-code', state },
-      { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
-    );
-    expect(outcome.ok).toBe(true);
-  });
-
-  it('rejects with no user created when the exchanged email has no matching admin', async () => {
-    const db = await freshAuthDb();
-    await seedAdminAndGetToken();
-    const state = await issueOAuthState(env.JWT_SECRET);
-    const exchange = vi.fn().mockResolvedValue({ email: 'nobody@example.com' });
+    const exchange = vi.fn().mockResolvedValue({ sub: 'someone-else' });
 
     const outcome = await resolveGoogleCallback(
       { code: 'auth-code', state },

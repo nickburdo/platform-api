@@ -13,7 +13,8 @@ export interface GoogleOAuthEnv {
 }
 
 export interface GoogleUserInfo {
-  email: string;
+  // Google's stable account id (OIDC sub). TEMPORARY until Task 6.
+  sub: string;
 }
 
 interface GoogleTokenResponse {
@@ -21,6 +22,7 @@ interface GoogleTokenResponse {
 }
 
 interface GoogleUserInfoResponse {
+  id?: string;
   email?: string;
   // Present when the `email` scope is granted. Only ever explicitly `false`
   // for accounts Google itself hasn't verified — checked defensively even
@@ -61,5 +63,8 @@ export async function exchangeGoogleCode(
   if (!userInfo.email || userInfo.verified_email === false) {
     throw new Error('Google account has no verified email');
   }
-  return { email: userInfo.email };
+  if (!userInfo.id) {
+    throw new Error('Google userinfo response has no id');
+  }
+  return { sub: userInfo.id };
 }

@@ -1,7 +1,6 @@
 import './extend-zod';
 import { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { USER_ROLES } from '../db/auth/schema';
 import { JOB_APPLICATION_STATUSES, REMOTE_TYPES } from '../db/job-tracker/schema';
 import { googleCallbackQuerySchema, loginSchema } from '../schemas/auth.schema';
 import { createBloodPressureSchema, updateBloodPressureSchema } from '../schemas/blood-pressure.schema';
@@ -221,8 +220,8 @@ const publicUserSchema = registry.register(
   'PublicUser',
   z.object({
     id: z.string().openapi({ example: 'user_1' }),
-    email: z.string().email(),
-    role: z.enum(USER_ROLES),
+    username: z.string().openapi({ example: 'Nick' }),
+    hasPassword: z.boolean(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
@@ -269,7 +268,7 @@ const loginRequestSchema = registry.register(
   'LoginRequest',
   loginSchema.openapi({
     description: 'Admin login credentials',
-    example: { email: 'admin@example.com', password: 'correct horse battery staple' },
+    example: { username: 'Nick', password: 'correct horse battery staple' },
   }),
 );
 

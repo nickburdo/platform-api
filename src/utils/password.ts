@@ -1,6 +1,5 @@
 // Salted PBKDF2 password hashing via WebCrypto (v2-plan.md Decisions #6/#12).
-// Native in both workerd (runtime login verification) and Node >= 18 (the
-// scripts/create-admin.ts bootstrap) — the exact same code runs in both.
+// Native in both workerd and Node >= 18, so the same code runs in either.
 //
 // Stored format is self-describing so parameters can be raised later without
 // re-hashing existing rows: pbkdf2-sha256:<iterations>:<salt-b64>:<hash-b64>

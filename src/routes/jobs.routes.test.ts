@@ -5,7 +5,7 @@ import {
   bearer,
   request,
   requestJson,
-  seedAdminAndGetToken,
+  seedUserAndGetToken,
   type DataEnvelope,
   type ErrorEnvelope,
   type ListEnvelope,
@@ -134,7 +134,7 @@ describe('DELETE /jobs/:id', () => {
 
 describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
   it('an admin token creates and reads real (isDemo: false) data', async () => {
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
     const created = await requestJson(
       'POST',
       '/jobs',
@@ -153,7 +153,7 @@ describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
 
   it('guest and admin worlds never see each others records in list/meta', async () => {
     await createJob({ company: 'GuestCo' }); // anonymous -> demo
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
     await requestJson('POST', '/jobs', { company: 'AdminCo', position: 'Engineer' }, bearer(token));
 
     const guestList = (await (await request('/jobs')).json()) as ListEnvelope;
@@ -174,7 +174,7 @@ describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
   });
 
   it('a guest cannot read/patch/delete a real record by id (404, not 403)', async () => {
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
     const created = await requestJson(
       'POST',
       '/jobs',
@@ -193,7 +193,7 @@ describe('authorization matrix (v2-plan.md Decisions #1/#4/#9/#11)', () => {
   it('the admin cannot read/patch a demo record by id (404, not 403)', async () => {
     const created = (await (await createJob()).json()) as DataEnvelope;
     const id = created.data.id as string;
-    const { token } = await seedAdminAndGetToken();
+    const { token } = await seedUserAndGetToken();
 
     expect((await request(`/jobs/${id}`, { headers: bearer(token) })).status).toBe(404);
     expect(

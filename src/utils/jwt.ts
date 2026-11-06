@@ -1,13 +1,12 @@
 import { SignJWT, jwtVerify } from 'jose';
 
-// Access tokens per v2-plan.md Decisions #4/#7/#12: HS256, 30-day expiry,
-// payload sub/role/iat/exp. No refresh tokens, no server-side revocation.
+// Access tokens: HS256, 30-day expiry, payload sub/iat/exp. No role claim
+// (V4 removed roles), no refresh tokens, no server-side revocation.
 
 export const TOKEN_TTL = '30d';
 
 export interface AuthTokenPayload {
   sub: string;
-  role: 'ADMIN';
 }
 
 function secretKey(secret: string): Uint8Array {
@@ -15,7 +14,7 @@ function secretKey(secret: string): Uint8Array {
 }
 
 export async function issueToken(userId: string, secret: string): Promise<string> {
-  return new SignJWT({ role: 'ADMIN' })
+  return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuedAt()
@@ -24,15 +23,15 @@ export async function issueToken(userId: string, secret: string): Promise<string
 }
 
 // Returns the payload for a valid, unexpired token; null for anything else
-// (bad signature, malformed, expired, unexpected shape). The caller decides
-// what null means — per Decision #9 a presented-but-invalid token is a 401.
+// (bad signature, malformed, expired, empty sub). The caller decides what
+// null means — a presented-but-invalid token is a 401.
 export async function verifyToken(token: string, secret: string): Promise<AuthTokenPayload | null> {
   try {
     const { payload } = await jwtVerify(token, secretKey(secret));
-    if (typeof payload.sub !== 'string' || payload.sub.length === 0 || payload.role !== 'ADMIN') {
+    if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
       return null;
     }
-    return { sub: payload.sub, role: 'ADMIN' };
+    return { sub: payload.sub };
   } catch {
     return null;
   }

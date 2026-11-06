@@ -23,13 +23,13 @@ afterEach(() => {
 });
 
 describe('exchangeGoogleCode', () => {
-  it('exchanges the code for a token, then the token for a verified email', async () => {
+  it('exchanges the code for a token, then the token for the Google account id and a verified email', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ access_token: 'token-123' }))
-      .mockResolvedValueOnce(jsonResponse({ email: 'admin@example.com', verified_email: true }));
+      .mockResolvedValueOnce(jsonResponse({ id: 'sub-123', email: 'admin@example.com', verified_email: true }));
 
     const result = await exchangeGoogleCode('auth-code', ENV, REDIRECT_URI);
-    expect(result).toEqual({ email: 'admin@example.com' });
+    expect(result).toEqual({ sub: 'sub-123' });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [tokenUrl, tokenInit] = fetchMock.mock.calls[0] as [string, RequestInit];

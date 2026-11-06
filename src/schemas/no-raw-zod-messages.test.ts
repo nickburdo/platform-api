@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { loginSchema } from './auth.schema';
+import { loginSchema, registerSchema } from './auth.schema';
 import { createBloodPressureSchema } from './blood-pressure.schema';
 import { idParamSchema } from './common.schema';
 import { createGlucoseSchema } from './glucose.schema';
@@ -61,6 +61,10 @@ describe('no raw Zod validation jargon leaks through on an empty body', () => {
 
   it('loginSchema', () => {
     assertNoRawJargon(loginSchema, 'loginSchema');
+  });
+
+  it('registerSchema', () => {
+    assertNoRawJargon(registerSchema, 'registerSchema');
   });
 
   it('idParamSchema', () => {

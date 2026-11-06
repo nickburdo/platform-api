@@ -3,8 +3,9 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app';
 import type { AuthDb } from '../db/auth/client';
-import { googleCallbackQuerySchema, loginSchema } from '../schemas/auth.schema';
-import { getMe, login, loginWithGoogle, type LoginResult } from '../services/auth.service';
+import { requireUser } from '../middleware/auth';
+import { googleCallbackQuerySchema, loginSchema, registerSchema } from '../schemas/auth.schema';
+import { getMe, login, loginWithGoogle, register, type LoginResult } from '../services/auth.service';
 import {
   exchangeGoogleCode,
   type GoogleOAuthEnv,
@@ -13,9 +14,15 @@ import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { errorBody } from '../utils/responses';
 import { validationHook } from '../utils/validation';
 
-// POST /auth/register is deliberately absent (v2-plan.md Decision #3):
-// registration is closed, so the path falls through to the global 404.
 export const authRoutes = new Hono<AppEnv>();
+
+authRoutes.post('/register', zValidator('json', registerSchema, validationHook), async (c) => {
+  const result = await register(c.var.authDb, c.req.valid('json'), c.env.JWT_SECRET);
+  if (result === 'username_taken') {
+    return c.json(errorBody('Username is already taken'), 409);
+  }
+  return c.json({ data: result }, 201);
+});
 
 authRoutes.post('/login', zValidator('json', loginSchema, validationHook), async (c) => {
   const result = await login(c.var.authDb, c.req.valid('json'), c.env.JWT_SECRET);
@@ -25,15 +32,11 @@ authRoutes.post('/login', zValidator('json', loginSchema, validationHook), async
   return c.json({ data: result });
 });
 
-authRoutes.get('/me', async (c) => {
+authRoutes.get('/me', requireUser, async (c) => {
   const identity = c.var.identity;
-  if (identity.scope !== 'admin') {
-    return c.json(errorBody('Unauthorized'), 401);
-  }
-  const user = await getMe(c.var.authDb, identity.userId);
+  const user = identity.scope === 'user' ? await getMe(c.var.authDb, identity.userId) : undefined;
   if (!user) {
-    // The token is valid but its user row is gone (e.g. auth-db was reset).
-    return c.json(errorBody('Unauthorized'), 401);
+    return c.json(errorBody('Invalid or expired token'), 401);
   }
   return c.json({ data: user });
 });
@@ -81,9 +84,9 @@ export async function resolveGoogleCallback(
     return { ok: false, reason: 'invalid_state' };
   }
 
-  let email: string;
+  let googleSub: string;
   try {
-    ({ email } = await deps.exchange(params.code, deps.env, deps.redirectUri));
+    ({ sub: googleSub } = await deps.exchange(params.code, deps.env, deps.redirectUri));
   } catch (err) {
     // Logged here (rather than left to bubble to the global handleError)
     // because it's deliberately caught and mapped to a generic 401 instead
@@ -94,7 +97,7 @@ export async function resolveGoogleCallback(
     return { ok: false, reason: 'invalid_credentials' };
   }
 
-  const result = await loginWithGoogle(deps.authDb, email, deps.env.JWT_SECRET);
+  const result = await loginWithGoogle(deps.authDb, googleSub, deps.env.JWT_SECRET);
   if (!result) {
     return { ok: false, reason: 'invalid_credentials' };
   }
