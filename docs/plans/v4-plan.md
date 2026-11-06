@@ -1,6 +1,6 @@
 # Version 4 — Implementation Plan
 
-> Status: **Approved** (2026-11-06) — execution: subagent-driven.
+> Status: **Approved** (2026-11-06) — execution: subagent-driven. **Revised 2026-11-06** after the final whole-branch review: Task 8b added (Decisions 22–25, spec U17–U18), approved by the user.
 > Depends on: Version 3 (`v3-plan.md`, Complete 2026-07-03)
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -63,6 +63,10 @@ Implementation-level decisions made while writing this plan (the product decisio
 19. **Linking flow state.** `issueOAuthState(secret, { redirect, intent: 'login' } | { redirect, intent: 'link', userId })`; `verifyOAuthState` returns the same union or `null`. The callback re-checks at link time that the user still exists and still has no `google_sub` (the 10-minute state window allows a concurrent change); failure → `#error=google_failed`.
 20. **Link endpoint is `POST` with a JSON body** returning the Google URL, because a browser navigation cannot carry the `Authorization` header and a JWT must never be put into a URL.
 21. **Set-password endpoint** `POST /auth/me/password` updates `password_hash` (and `username` if given) in one `UPDATE … WHERE id = ? AND password_hash IS NULL`; zero affected rows → `409 Password is already set`; unique violation on username → `409 Username is already taken`.
+22. **Link ticket** — 5-minute HS256 JWT `purpose: 'google_link'` with `userId` + `sub`, delivered as `#link_ticket=`; the callback never links by itself (CSRF: the browser completing Google may not be the user who started).
+23. **`POST /auth/google/link/complete`** links only when caller `userId` === ticket `userId`; mismatch is reported exactly like an invalid ticket (`400`), so nothing about the ticket owner leaks.
+24. **Login password `.max(128)`** for symmetry with register.
+25. **Deploy safety:** pre-apply `migrations list` check, Time Travel bookmarks and a documented combined rollback (code rollback alone would leave V3 code on the V4 schema).
 
 ---
 
@@ -246,6 +250,20 @@ Implementation-level decisions made while writing this plan (the product decisio
 - [ ] **Step 2:** `npm run openapi:generate`. Expected: "valid"; warning count not higher than V3's 28.
 - [ ] **Step 3:** `.http` files: `auth.http` registers a random username (`{{$random.alphanumeric(8)}}`), stores the token, and contains login, me, delete-me; resource files use `{{token}}` for writes and assert guest writes → `401`. Private env example: `username`/`password` instead of `email`.
 - [ ] **Step 4:** Live check against `npm run dev` (`wrangler dev --remote`) is **not** possible before the Task 9 migrations (remote DBs still have the old schema) — run the `.http` files against prod in Task 9 instead. Commit `feat: V4 Task 8 - OpenAPI and HTTP collection for multi-user auth`.
+
+### Task 8b: Post-review fixes (revision 2026-11-06)
+
+**Files:** `src/utils/oauth-state.ts` (or new `src/utils/link-ticket.ts`), `src/services/auth.service.ts`, `src/schemas/auth.schema.ts`, `src/routes/auth.routes.ts`, `src/openapi/registry.ts` + regenerated `openapi.json`, `http/auth.http`, tests; docs `api.md`, `frontend-guide.md`, `decisions.md` (ADR-014 addendum + ADR-013 CSRF wording), `development.md`, `architecture.md`, `deployment.md`.
+
+- [ ] **Step 1 (Decision 22):** link ticket — `issueLinkTicket(secret, { userId, sub }): Promise<string>` (HS256, `purpose: 'google_link'`, 5 min), `verifyLinkTicket(token, secret): Promise<{ userId; sub } | null>`; neither an access token nor an OAuth state verifies as a ticket and vice versa.
+- [ ] **Step 2:** callback `intent: 'link'`: after a successful exchange, redirect to `<redirect>#link_ticket=<encodeURIComponent(ticket)>`; no DB write. Cancel/exchange failure keep `#error=access_denied` / `#error=google_failed`.
+- [ ] **Step 3 (Decision 23):** `POST /auth/google/link/complete` — `requireUser` first, body `{ ticket }` `.strict()`; invalid/expired ticket or `ticket.userId !== caller` → `400 Invalid or expired link ticket`; `sub` owned by another user → `409 Google account is already used by another user`; caller already has `google_sub` (or gone) → `409 Google account is already linked`; success → `200 { data: PublicUser }`. Reuses the guarded `setGoogleSub` + race re-check from Task 7.
+- [ ] **Step 4 (Decision 24):** login `password` gets `.max(128)` (same message style as register).
+- [ ] **Step 5:** tests — ticket round-trip and cross-purpose rejection; link callback yields `#link_ticket` and writes nothing; complete by the right user links (then Google login with that sub yields the same user id); complete by **another** user's token with a valid ticket → `400` and no link (the CSRF scenario); expired/tampered ticket → `400`; already-used / already-linked → the two `409`s; guest → `401`; login with a 129-char password → `400`.
+- [ ] **Step 6:** docs — `api.md` (new endpoint, changed callback result, login body rule "non-empty strings, max 128; malformed username → 401", note that a stale token gets 401 on every route incl. login/register so clients must not send one there); `frontend-guide.md` (two-step link flow, mandatory nonce rule U18 for sign-in and link callbacks); `decisions.md` (ADR-014 addendum on CSRF; correct ADR-013's "state gives CSRF protection" wording as superseded); comment in `oauth-state.ts` (state proves issuance, not browser binding; stale reasons list); "two databases" → three in `development.md`/`architecture.md`.
+- [ ] **Step 7 (Decision 25):** `deployment.md` — before applying migrations run `npx wrangler d1 migrations list <db> --remote` for each DB (only `0001_*` pending); record `npx wrangler d1 time-travel info <db>` for each DB; rollback = D1 Time Travel restore of all three DBs **plus** `npx wrangler rollback`; note that OAuth states issued before the deploy fail (in-flight Google logins get 401, retry); note that `.http` runs against prod leave throwaway accounts (delete them or use the delete-me flow).
+- [ ] **Step 8:** registry + `npm run openapi:generate` (valid, ≤ 24 warnings + new endpoint's operationId); `http/auth.http` — link complete flow (document that Google requires a browser; restore that header note).
+- [ ] **Step 9:** gate, commit `fix: V4 post-review — two-step Google linking, CSRF docs, deploy safety`.
 
 ### Task 9: Deployment (only on explicit user request)
 
