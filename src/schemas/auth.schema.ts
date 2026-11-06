@@ -4,18 +4,31 @@ import { z } from 'zod';
 // is case-insensitive and enforced by the DB (v4-plan.md Decision 5).
 const USERNAME_MESSAGE = 'username must be 3-32 characters: letters, digits, "_" or "-"';
 
+const usernameField = z
+  .string('username is required')
+  .min(3, USERNAME_MESSAGE)
+  .max(32, USERNAME_MESSAGE)
+  .regex(/^[A-Za-z0-9_-]+$/, USERNAME_MESSAGE);
+
+const passwordField = z
+  .string('password is required')
+  .min(8, 'password must be at least 8 characters')
+  .max(128, 'password must be at most 128 characters');
+
 export const registerSchema = z
-  .object({
-    username: z
-      .string('username is required')
-      .min(3, USERNAME_MESSAGE)
-      .max(32, USERNAME_MESSAGE)
-      .regex(/^[A-Za-z0-9_-]+$/, USERNAME_MESSAGE),
-    password: z
-      .string('password is required')
-      .min(8, 'password must be at least 8 characters')
-      .max(128, 'password must be at most 128 characters'),
-  })
+  .object({ username: usernameField, password: passwordField })
+  .strict();
+
+// POST /auth/me/password: a Google-only account sets its first password and
+// may pick a username at the same time (Decision 21).
+export const setPasswordSchema = z
+  .object({ password: passwordField, username: usernameField.optional() })
+  .strict();
+
+// POST /auth/google/link: the frontend URL to return to (allow-list checked in
+// the route, which needs the env).
+export const googleLinkBodySchema = z
+  .object({ redirect: z.string('redirect is required') })
   .strict();
 
 // No format rule on login: a malformed username simply fails to match and

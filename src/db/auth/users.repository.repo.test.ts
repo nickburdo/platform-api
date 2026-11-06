@@ -9,6 +9,8 @@ import {
   findUserByUsername,
   insertUser,
   isUniqueViolation,
+  setGoogleSub,
+  setInitialPassword,
 } from './users.repository';
 
 let db: AuthDb;
@@ -93,6 +95,65 @@ describe('insertUser', () => {
     );
     expect(err).toBeDefined();
     expect(isUniqueViolation(err)).toBe(false);
+  });
+});
+
+describe('setGoogleSub', () => {
+  it('links a sub to a user without one', async () => {
+    await insertUser(db, makeUser({ id: 'u-1' }));
+    expect(await setGoogleSub(db, 'u-1', 'sub-1')).toBe(true);
+    expect((await findUserByGoogleSub(db, 'sub-1'))?.id).toBe('u-1');
+  });
+
+  it('returns false and changes nothing when the user already has a sub or is missing', async () => {
+    await insertUser(db, makeUser({ id: 'u-1', googleSub: 'sub-1' }));
+    expect(await setGoogleSub(db, 'u-1', 'sub-2')).toBe(false);
+    expect((await findUserById(db, 'u-1'))?.googleSub).toBe('sub-1');
+    expect(await setGoogleSub(db, 'missing', 'sub-3')).toBe(false);
+  });
+
+  it('throws a unique violation when the sub belongs to another user', async () => {
+    await insertUser(db, makeUser({ id: 'u-1', username: 'aaa', googleSub: 'sub-1' }));
+    await insertUser(db, makeUser({ id: 'u-2', username: 'bbb' }));
+    const err = await captureError(() => setGoogleSub(db, 'u-2', 'sub-1'));
+    expect(isUniqueViolation(err)).toBe(true);
+    expect((await findUserById(db, 'u-2'))?.googleSub).toBeNull();
+  });
+});
+
+describe('setInitialPassword', () => {
+  const googleOnly = (id: string, username: string, sub: string) =>
+    makeUser({ id, username, passwordHash: null, googleSub: sub });
+
+  it('sets the password on a Google-only user', async () => {
+    await insertUser(db, googleOnly('g-1', 'user-abc123', 'sub-1'));
+    expect(await setInitialPassword(db, 'g-1', 'HASH')).toBe('ok');
+    const row = await findUserById(db, 'g-1');
+    expect(row?.passwordHash).toBe('HASH');
+    expect(row?.username).toBe('user-abc123');
+  });
+
+  it('also changes the username when given', async () => {
+    await insertUser(db, googleOnly('g-1', 'user-abc123', 'sub-1'));
+    expect(await setInitialPassword(db, 'g-1', 'HASH', 'Nick')).toBe('ok');
+    expect((await findUserById(db, 'g-1'))?.username).toBe('Nick');
+  });
+
+  it('returns already_set for a user that has a password, leaving it untouched', async () => {
+    await insertUser(db, makeUser({ id: 'u-1', username: 'aaa' }));
+    expect(await setInitialPassword(db, 'u-1', 'HASH', 'zzz')).toBe('already_set');
+    const row = await findUserById(db, 'u-1');
+    expect(row?.passwordHash).not.toBe('HASH');
+    expect(row?.username).toBe('aaa');
+  });
+
+  it('returns username_taken (case-insensitive) and does not set the password', async () => {
+    await insertUser(db, makeUser({ id: 'u-1', username: 'Nick' }));
+    await insertUser(db, googleOnly('g-1', 'user-abc123', 'sub-1'));
+    expect(await setInitialPassword(db, 'g-1', 'HASH', 'nick')).toBe('username_taken');
+    const row = await findUserById(db, 'g-1');
+    expect(row?.passwordHash).toBeNull();
+    expect(row?.username).toBe('user-abc123');
   });
 });
 

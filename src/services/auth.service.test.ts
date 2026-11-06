@@ -11,9 +11,12 @@ import { createJobTrackerDb } from '../db/job-tracker/client';
 import {
   deleteAccount,
   getMe,
+  linkGoogle,
   login,
   loginWithGoogle,
   register,
+  setPassword,
+  startGoogleLink,
   toPublicUser,
 } from './auth.service';
 
@@ -148,6 +151,69 @@ describe('loginWithGoogle', () => {
     const second = await loginWithGoogle(db, 'brand-new-sub', SECRET);
     expect(second.user.id).toBe(first.user.id);
     expect(await db.select().from(users)).toHaveLength(1);
+  });
+});
+
+describe('linkGoogle', () => {
+  it('links a sub to a user without one', async () => {
+    await seedUser();
+    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('ok');
+    expect((await findUserById(db, 'user-1'))?.googleSub).toBe('sub-1');
+  });
+
+  it('returns already_used when another account owns the sub', async () => {
+    await seedUser();
+    const other = await loginWithGoogle(db, 'sub-1', SECRET);
+    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('already_used');
+    expect((await findUserById(db, 'user-1'))?.googleSub).toBeNull();
+    expect((await findUserById(db, other.user.id))?.googleSub).toBe('sub-1');
+  });
+
+  it('returns failed when the user is gone or already linked', async () => {
+    expect(await linkGoogle(db, 'missing', 'sub-1')).toBe('failed');
+    await seedUser();
+    await linkGoogle(db, 'user-1', 'sub-1');
+    expect(await linkGoogle(db, 'user-1', 'sub-2')).toBe('failed');
+    expect(await linkGoogle(db, 'user-1', 'sub-1')).toBe('failed');
+    expect((await findUserById(db, 'user-1'))?.googleSub).toBe('sub-1');
+  });
+});
+
+describe('startGoogleLink', () => {
+  it('reports ok, already_linked and no_user', async () => {
+    expect(await startGoogleLink(db, 'user-1')).toBe('no_user');
+    await seedUser();
+    expect(await startGoogleLink(db, 'user-1')).toBe('ok');
+    await linkGoogle(db, 'user-1', 'sub-1');
+    expect(await startGoogleLink(db, 'user-1')).toBe('already_linked');
+  });
+});
+
+describe('setPassword', () => {
+  it('sets the password of a Google-only user and returns the public user', async () => {
+    const g = await loginWithGoogle(db, 'sub-1', SECRET);
+    const result = await setPassword(db, g.user.id, { password: 'brand-new-password' });
+    expect(result).toMatchObject({ id: g.user.id, hasPassword: true });
+    const logged = await login(
+      db,
+      { username: g.user.username, password: 'brand-new-password' },
+      SECRET,
+    );
+    expect(logged?.user.id).toBe(g.user.id);
+  });
+
+  it('returns already_set for a password account', async () => {
+    await seedUser();
+    expect(await setPassword(db, 'user-1', { password: 'another-password' })).toBe('already_set');
+  });
+
+  it('returns username_taken and leaves the account password-less', async () => {
+    await seedUser({ username: 'Nick' });
+    const g = await loginWithGoogle(db, 'sub-1', SECRET);
+    expect(
+      await setPassword(db, g.user.id, { password: 'brand-new-password', username: 'nick' }),
+    ).toBe('username_taken');
+    expect(toPublicUser((await findUserById(db, g.user.id))!).hasPassword).toBe(false);
   });
 });
 

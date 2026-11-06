@@ -10,10 +10,12 @@ import {
   findUserByUsername,
   insertUser,
   isUniqueViolation,
+  setGoogleSub,
+  setInitialPassword,
 } from '../db/auth/users.repository';
 import { deleteHealthDataByUserId } from '../db/health-monitor/account-data.repository';
 import { deleteJobApplicationsByUserId } from '../db/job-tracker/job-applications.repository';
-import type { loginSchema, registerSchema } from '../schemas/auth.schema';
+import type { loginSchema, registerSchema, setPasswordSchema } from '../schemas/auth.schema';
 import { issueToken } from '../utils/jwt';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -145,6 +147,62 @@ export async function loginWithGoogle(
   }
   const token = await issueToken(user.id, jwtSecret);
   return { token, user: toPublicUser(user) };
+}
+
+// Pre-check for POST /auth/google/link, before a Google URL is handed out.
+export async function startGoogleLink(
+  db: AuthDb,
+  userId: string,
+): Promise<'ok' | 'already_linked' | 'no_user'> {
+  const user = await findUserById(db, userId);
+  if (!user) {
+    return 'no_user';
+  }
+  return user.googleSub === null ? 'ok' : 'already_linked';
+}
+
+// Decision 19: runs at callback time, up to 10 minutes after the state was
+// issued, so everything is re-checked. 'already_used' = the sub belongs to
+// another account; 'failed' = the user is gone or already linked.
+export async function linkGoogle(
+  db: AuthDb,
+  userId: string,
+  googleSub: string,
+): Promise<'ok' | 'already_used' | 'failed'> {
+  const owner = await findUserByGoogleSub(db, googleSub);
+  if (owner) {
+    return owner.id === userId ? 'failed' : 'already_used';
+  }
+  try {
+    return (await setGoogleSub(db, userId, googleSub)) ? 'ok' : 'failed';
+  } catch (err) {
+    if (!isUniqueViolation(err)) {
+      throw err;
+    }
+    // Race: another account claimed the sub after the check above. The only
+    // unique index touched by setGoogleSub is google_sub.
+    const winner = await findUserByGoogleSub(db, googleSub);
+    return winner && winner.id !== userId ? 'already_used' : 'failed';
+  }
+}
+
+// Decision 21. Returns the updated public user, or a reason.
+export async function setPassword(
+  db: AuthDb,
+  userId: string,
+  input: z.infer<typeof setPasswordSchema>,
+): Promise<PublicUser | 'already_set' | 'username_taken' | 'no_user'> {
+  const result = await setInitialPassword(
+    db,
+    userId,
+    await hashPassword(input.password),
+    input.username,
+  );
+  if (result !== 'ok') {
+    return result;
+  }
+  const user = await findUserById(db, userId);
+  return user ? toPublicUser(user) : 'no_user';
 }
 
 export interface AccountDeletionDbs {

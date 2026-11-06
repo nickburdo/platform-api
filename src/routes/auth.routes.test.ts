@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:test';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthDb } from '../db/auth/client';
 import { findUserById } from '../db/auth/users.repository';
@@ -23,7 +24,7 @@ import {
 import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
-import { toPublicUser } from '../services/auth.service';
+import { loginWithGoogle, toPublicUser } from '../services/auth.service';
 import { issueToken, verifyToken } from '../utils/jwt';
 import { issueOAuthState, verifyOAuthState } from '../utils/oauth-state';
 import { resolveGoogleCallback } from './auth.routes';
@@ -234,7 +235,7 @@ describe('GET /auth/google', () => {
     expect(location.searchParams.get('scope')).toBe('openid');
     expect(location.searchParams.get('redirect_uri')).toMatch(/\/auth\/google\/callback$/);
     const state = location.searchParams.get('state')!;
-    expect(await verifyOAuthState(state, env.JWT_SECRET)).toEqual({ redirect: FRONTEND });
+    expect(await verifyOAuthState(state, env.JWT_SECRET)).toEqual({ intent: 'login', redirect: FRONTEND });
   });
 
   it.each(['/auth/google', '/auth/google?redirect='])(
@@ -296,7 +297,7 @@ describe('GET /auth/google/callback', () => {
   });
 
   it('redirects to the frontend with #error=access_denied when the user cancels', async () => {
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const res = await request(`/auth/google/callback?error=access_denied&state=${state}`, {
       redirect: 'manual',
     });
@@ -333,7 +334,7 @@ describe('resolveGoogleCallback', () => {
   it('rejects a validly signed state whose redirect is not allowed (defense in depth)', async () => {
     const db = await freshAuthDb();
     const exchange = vi.fn();
-    const state = await issueOAuthState(env.JWT_SECRET, 'https://evil.com/cb');
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: 'https://evil.com/cb' });
     const outcome = await resolveGoogleCallback(
       { code: 'c', state },
       { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange, logError },
@@ -344,7 +345,7 @@ describe('resolveGoogleCallback', () => {
 
   it('creates a Google-only account and redirects with a verifiable token fragment', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const exchange = vi.fn().mockResolvedValue({ sub: 'sub-123' });
 
     const outcome = await resolveGoogleCallback(
@@ -369,7 +370,7 @@ describe('resolveGoogleCallback', () => {
 
   it('redirects with #error=google_failed when exchange throws, logging the cause', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const exchange = vi.fn().mockRejectedValue(new Error('Google token exchange failed: 400'));
 
     const outcome = await resolveGoogleCallback(
@@ -383,7 +384,7 @@ describe('resolveGoogleCallback', () => {
 
   it('redirects with #error=google_failed when there is no code and no error', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const exchange = vi.fn();
     const outcome = await resolveGoogleCallback(
       { state },
@@ -395,7 +396,7 @@ describe('resolveGoogleCallback', () => {
 
   it('redirects with #error=google_failed for an error other than access_denied', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const exchange = vi.fn();
     const outcome = await resolveGoogleCallback(
       { state, error: 'server_error' },
@@ -407,7 +408,7 @@ describe('resolveGoogleCallback', () => {
 
   it('redirects with #error=access_denied without calling exchange', async () => {
     const db = await freshAuthDb();
-    const state = await issueOAuthState(env.JWT_SECRET, FRONTEND);
+    const state = await issueOAuthState(env.JWT_SECRET, { intent: 'login', redirect: FRONTEND });
     const exchange = vi.fn();
     const outcome = await resolveGoogleCallback(
       { state, error: 'access_denied' },
@@ -415,6 +416,224 @@ describe('resolveGoogleCallback', () => {
     );
     expect(outcome).toEqual({ kind: 'redirect', location: `${FRONTEND}#error=access_denied` });
     expect(exchange).not.toHaveBeenCalled();
+  });
+});
+
+describe('account linking', () => {
+  const REDIRECT_URI = 'https://example.com/auth/google/callback';
+  const oauthEnv = {
+    GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+    JWT_SECRET: env.JWT_SECRET,
+    ALLOWED_FRONTEND_ORIGINS: env.ALLOWED_FRONTEND_ORIGINS,
+  };
+  const logError = vi.fn();
+
+  async function startLink(token: string, redirect = FRONTEND) {
+    return requestJson('POST', '/auth/google/link', { redirect }, bearer(token));
+  }
+
+  async function callback(state: string, sub: string, db: Awaited<ReturnType<typeof freshAuthDb>>) {
+    const outcome = await resolveGoogleCallback(
+      { code: 'c', state },
+      {
+        authDb: db,
+        env: oauthEnv,
+        redirectUri: REDIRECT_URI,
+        exchange: vi.fn().mockResolvedValue({ sub }),
+        logError,
+      },
+    );
+    if (outcome.kind !== 'redirect') {
+      throw new Error('expected a redirect');
+    }
+    return outcome.location;
+  }
+
+  async function stateFromLinkResponse(res: Response): Promise<string> {
+    const { data } = (await res.json()) as { data: { url: string } };
+    return new URL(data.url).searchParams.get('state')!;
+  }
+
+  describe('POST /auth/google/link', () => {
+    it('links Google to a password account; later Google login yields the same account', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const res = await startLink(a.token);
+      expect(res.status).toBe(200);
+      const { data } = (await res.json()) as { data: { url: string } };
+      const url = new URL(data.url);
+      expect(url.host).toBe('accounts.google.com');
+      expect(url.searchParams.get('scope')).toBe('openid');
+      const state = url.searchParams.get('state')!;
+      expect(await verifyOAuthState(state, env.JWT_SECRET)).toEqual({
+        intent: 'link',
+        redirect: FRONTEND,
+        userId: a.userId,
+      });
+
+      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#linked=google`);
+
+      const login = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+      expect(login.user.id).toBe(a.userId);
+      expect(await db.select().from(users)).toHaveLength(1);
+    });
+
+    it('reports google_already_used when the sub belongs to a Google-only user, changing nobody', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const b = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+      const state = await stateFromLinkResponse(await startLink(a.token));
+
+      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#error=google_already_used`);
+
+      expect((await findUserById(db, a.userId))?.googleSub).toBeNull();
+      expect((await findUserById(db, b.user.id))?.googleSub).toBe('sub-1');
+    });
+
+    it('reports google_failed when the user is deleted or linked meanwhile', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      expect(await callback(state, 'sub-1', db)).toBe(`${FRONTEND}#linked=google`);
+      // Same state replayed after the account is linked.
+      expect(await callback(state, 'sub-2', db)).toBe(`${FRONTEND}#error=google_failed`);
+      expect((await findUserById(db, a.userId))?.googleSub).toBe('sub-1');
+
+      const c = await seedUserAndGetToken({ username: 'carol' });
+      const stateC = await stateFromLinkResponse(await startLink(c.token));
+      await db.delete(users).where(eq(users.id, c.userId));
+      expect(await callback(stateC, 'sub-3', db)).toBe(`${FRONTEND}#error=google_failed`);
+      expect(await db.select().from(users)).toHaveLength(1);
+    });
+
+    it('rejects an already linked account with 409', async () => {
+      const db = await freshAuthDb();
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const state = await stateFromLinkResponse(await startLink(a.token));
+      await callback(state, 'sub-1', db);
+      const res = await startLink(a.token);
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+        'Google account is already linked',
+      );
+    });
+
+    it('rejects a guest with 401 Authentication required, even with an invalid body', async () => {
+      const res = await requestJson('POST', '/auth/google/link', { nope: true });
+      expect(res.status).toBe(401);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Authentication required');
+    });
+
+    it('rejects a disallowed redirect with 400', async () => {
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const res = await startLink(a.token, 'https://evil.com/cb');
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe(
+        'redirect must be an allowed frontend URL',
+      );
+    });
+  });
+
+  describe('POST /auth/me/password', () => {
+    async function googleOnlyToken() {
+      const db = createAuthDb(env.AUTH_DB);
+      const g = await loginWithGoogle(db, 'sub-1', env.JWT_SECRET);
+      return { token: g.token, username: g.user.username, id: g.user.id };
+    }
+
+    it('sets the password; login with the generated username then works', async () => {
+      const g = await googleOnlyToken();
+      const res = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'brand-new-password' },
+        bearer(g.token),
+      );
+      expect(res.status).toBe(200);
+      const { data } = (await res.json()) as DataEnvelope;
+      expect(data).toMatchObject({ id: g.id, username: g.username, hasPassword: true });
+      expect(data).not.toHaveProperty('passwordHash');
+      const login = await requestJson('POST', '/auth/login', {
+        username: g.username,
+        password: 'brand-new-password',
+      });
+      expect(login.status).toBe(200);
+    });
+
+    it('also sets a chosen username (login as nick works)', async () => {
+      const g = await googleOnlyToken();
+      const res = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'brand-new-password', username: 'Nick' },
+        bearer(g.token),
+      );
+      expect(res.status).toBe(200);
+      const login = await requestJson('POST', '/auth/login', {
+        username: 'nick',
+        password: 'brand-new-password',
+      });
+      expect(login.status).toBe(200);
+    });
+
+    it('rejects a second call with 409 Password is already set', async () => {
+      const g = await googleOnlyToken();
+      await requestJson('POST', '/auth/me/password', { password: 'brand-new-password' }, bearer(g.token));
+      const res = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'another-password' },
+        bearer(g.token),
+      );
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Password is already set');
+    });
+
+    it('rejects a taken username with 409 and leaves the password unset', async () => {
+      await seedUserAndGetToken({ username: 'Nick' });
+      const g = await googleOnlyToken();
+      const res = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'brand-new-password', username: 'nick' },
+        bearer(g.token),
+      );
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Username is already taken');
+      const me = await request('/auth/me', { headers: bearer(g.token) });
+      expect(((await me.json()) as DataEnvelope).data.hasPassword).toBe(false);
+    });
+
+    it('rejects a password account with 409', async () => {
+      const a = await seedUserAndGetToken({ username: 'alice' });
+      const res = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'another-password' },
+        bearer(a.token),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    it('rejects a guest with 401 before validating the body', async () => {
+      const res = await requestJson('POST', '/auth/me/password', { password: 'x' });
+      expect(res.status).toBe(401);
+      expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Authentication required');
+    });
+
+    it('rejects an invalid body with 400', async () => {
+      const g = await googleOnlyToken();
+      const short = await requestJson('POST', '/auth/me/password', { password: 'short' }, bearer(g.token));
+      expect(short.status).toBe(400);
+      const extra = await requestJson(
+        'POST',
+        '/auth/me/password',
+        { password: 'brand-new-password', role: 'ADMIN' },
+        bearer(g.token),
+      );
+      expect(extra.status).toBe(400);
+    });
   });
 });
 

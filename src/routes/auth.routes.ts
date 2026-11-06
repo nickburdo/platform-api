@@ -7,11 +7,22 @@ import { requireUser } from '../middleware/auth';
 import { requestLogContext } from '../middleware/logging';
 import {
   googleCallbackQuerySchema,
+  googleLinkBodySchema,
   googleStartQuerySchema,
   loginSchema,
   registerSchema,
+  setPasswordSchema,
 } from '../schemas/auth.schema';
-import { deleteAccount, getMe, login, loginWithGoogle, register } from '../services/auth.service';
+import {
+  deleteAccount,
+  getMe,
+  linkGoogle,
+  login,
+  loginWithGoogle,
+  register,
+  setPassword,
+  startGoogleLink,
+} from '../services/auth.service';
 import {
   exchangeGoogleCode,
   type GoogleOAuthEnv,
@@ -48,6 +59,29 @@ authRoutes.get('/me', requireUser, async (c) => {
   return c.json({ data: user });
 });
 
+authRoutes.post(
+  '/me/password',
+  requireUser,
+  zValidator('json', setPasswordSchema, validationHook),
+  async (c) => {
+    const identity = c.var.identity;
+    if (identity.scope !== 'user') {
+      return c.json(errorBody('Authentication required'), 401);
+    }
+    const result = await setPassword(c.var.authDb, identity.userId, c.req.valid('json'));
+    if (result === 'already_set') {
+      return c.json(errorBody('Password is already set'), 409);
+    }
+    if (result === 'username_taken') {
+      return c.json(errorBody('Username is already taken'), 409);
+    }
+    if (result === 'no_user') {
+      return c.json(errorBody('Invalid or expired token'), 401);
+    }
+    return c.json({ data: result });
+  },
+);
+
 authRoutes.delete('/me', requireUser, async (c) => {
   const identity = c.var.identity;
   if (identity.scope !== 'user') {
@@ -72,6 +106,17 @@ function googleCallbackUrl(c: Context<AppEnv>): string {
   return `${new URL(c.req.url).origin}/auth/google/callback`;
 }
 
+function googleAuthUrl(c: Context<AppEnv>, state: string): string {
+  const params = new URLSearchParams({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    redirect_uri: googleCallbackUrl(c),
+    response_type: 'code',
+    scope: 'openid',
+    state,
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
 authRoutes.get('/google', zValidator('query', googleStartQuerySchema, validationHook), async (c) => {
   const { redirect } = c.req.valid('query');
   if (
@@ -82,16 +127,43 @@ authRoutes.get('/google', zValidator('query', googleStartQuerySchema, validation
   }
   // Sign the normalized form, so the later Location header is exactly what
   // was validated.
-  const state = await issueOAuthState(c.env.JWT_SECRET, new URL(redirect).href);
-  const params = new URLSearchParams({
-    client_id: c.env.GOOGLE_CLIENT_ID,
-    redirect_uri: googleCallbackUrl(c),
-    response_type: 'code',
-    scope: 'openid',
-    state,
+  const state = await issueOAuthState(c.env.JWT_SECRET, {
+    intent: 'login',
+    redirect: new URL(redirect).href,
   });
-  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`, 302);
+  return c.redirect(googleAuthUrl(c, state), 302);
 });
+
+// Decision 20: POST with a JSON body, because a browser navigation cannot carry
+// the Authorization header and a JWT must never be put into a URL.
+authRoutes.post(
+  '/google/link',
+  requireUser,
+  zValidator('json', googleLinkBodySchema, validationHook),
+  async (c) => {
+    const identity = c.var.identity;
+    if (identity.scope !== 'user') {
+      return c.json(errorBody('Authentication required'), 401);
+    }
+    const { redirect } = c.req.valid('json');
+    if (!isAllowedRedirect(redirect, parseAllowedOrigins(c.env.ALLOWED_FRONTEND_ORIGINS))) {
+      return c.json(errorBody('redirect must be an allowed frontend URL'), 400);
+    }
+    const status = await startGoogleLink(c.var.authDb, identity.userId);
+    if (status === 'no_user') {
+      return c.json(errorBody('Invalid or expired token'), 401);
+    }
+    if (status === 'already_linked') {
+      return c.json(errorBody('Google account is already linked'), 409);
+    }
+    const state = await issueOAuthState(c.env.JWT_SECRET, {
+      intent: 'link',
+      redirect: new URL(redirect).href,
+      userId: identity.userId,
+    });
+    return c.json({ data: { url: googleAuthUrl(c, state) } });
+  },
+);
 
 export type GoogleCallbackOutcome = { kind: 'invalid_state' } | { kind: 'redirect'; location: string };
 
@@ -141,6 +213,13 @@ export async function resolveGoogleCallback(
 
   try {
     const { sub } = await deps.exchange(query.code, deps.env, deps.redirectUri);
+    if (state.intent === 'link') {
+      const linked = await linkGoogle(deps.authDb, state.userId, sub);
+      if (linked === 'already_used') {
+        return to('error=google_already_used');
+      }
+      return to(linked === 'ok' ? 'linked=google' : 'error=google_failed');
+    }
     const result = await loginWithGoogle(deps.authDb, sub, deps.env.JWT_SECRET);
     return to(`token=${encodeURIComponent(result.token)}`);
   } catch (err) {
