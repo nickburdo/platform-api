@@ -47,6 +47,10 @@ describe('isAllowedRedirect', () => {
     'data:text/html,hi',
     'ftp://localhost/',
     '/relative/path',
+    'https://job-tracker-new.pages.dev/x\n',
+    'https://job-tracker-new.pages.dev/\tx',
+    ' https://job-tracker-new.pages.dev/x',
+    'https://job-tracker-new.pages.dev/x ',
     '',
   ])('rejects %s', (redirect) => {
     expect(isAllowedRedirect(redirect, ALLOWED)).toBe(false);

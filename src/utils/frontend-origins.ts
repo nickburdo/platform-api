@@ -26,12 +26,25 @@ export function parseAllowedOrigins(raw: string): string[] {
   return origins;
 }
 
+// Any whitespace or control character (including a leading/trailing space).
+function hasWhitespaceOrControl(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.codePointAt(0)!;
+    if (code <= 0x20 || code === 0x7f || /\s/.test(ch)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // True only for an absolute http(s) URL without a fragment whose origin is
 // exactly an allowed origin, or whose hostname is localhost/127.0.0.1 (any
 // port, either scheme). Comparison is on the parsed `url.origin`, never on a
 // string prefix, so look-alike hosts and userinfo tricks do not match.
 export function isAllowedRedirect(redirect: string, allowedOrigins: string[]): boolean {
-  if (redirect.includes('#')) {
+  // `new URL` silently strips tabs/newlines and surrounding spaces, so such
+  // input would pass the checks below yet break the Location header later.
+  if (redirect.includes('#') || hasWhitespaceOrControl(redirect)) {
     return false;
   }
   let url: URL;

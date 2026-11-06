@@ -237,10 +237,15 @@ describe('GET /auth/google', () => {
     expect(await verifyOAuthState(state, env.JWT_SECRET)).toEqual({ redirect: FRONTEND });
   });
 
-  it('rejects a missing redirect with 400', async () => {
-    const res = await request('/auth/google', { redirect: 'manual' });
-    expect(res.status).toBe(400);
-  });
+  it.each(['/auth/google', '/auth/google?redirect='])(
+    'rejects a missing or empty redirect (%s) with the documented 400 message',
+    async (path) => {
+      const res = await request(path, { redirect: 'manual' });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as ErrorEnvelope;
+      expect(body.error.message).toBe('redirect must be an allowed frontend URL');
+    },
+  );
 
   it.each([
     'https://job-tracker-new.pages.dev.evil.com/x',
@@ -249,6 +254,8 @@ describe('GET /auth/google', () => {
     'javascript:alert(1)',
     'http://job-tracker-new.pages.dev/x',
     'https://job-tracker-new.pages.dev/x#frag',
+    'https://job-tracker-new.pages.dev/x\n',
+    ' https://job-tracker-new.pages.dev/x',
   ])('rejects the look-alike redirect %s with 400 and no redirect', async (redirect) => {
     const res = await request(`/auth/google?redirect=${encodeURIComponent(redirect)}`, {
       redirect: 'manual',
@@ -261,10 +268,15 @@ describe('GET /auth/google', () => {
 });
 
 describe('GET /auth/google/callback', () => {
-  it('rejects a missing state with 400', async () => {
-    const res = await request('/auth/google/callback?code=irrelevant', { redirect: 'manual' });
-    expect(res.status).toBe(400);
-  });
+  it.each(['/auth/google/callback?code=irrelevant', '/auth/google/callback?code=x&state='])(
+    'rejects a missing or empty state (%s) with 401 Invalid or expired state',
+    async (path) => {
+      const res = await request(path, { redirect: 'manual' });
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as ErrorEnvelope;
+      expect(body.error.message).toBe('Invalid or expired state');
+    },
+  );
 
   it('rejects a tampered state with 401 JSON, before ever reaching Google', async () => {
     const res = await request('/auth/google/callback?code=irrelevant&state=garbage', {

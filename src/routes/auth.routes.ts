@@ -74,10 +74,15 @@ function googleCallbackUrl(c: Context<AppEnv>): string {
 
 authRoutes.get('/google', zValidator('query', googleStartQuerySchema, validationHook), async (c) => {
   const { redirect } = c.req.valid('query');
-  if (!isAllowedRedirect(redirect, parseAllowedOrigins(c.env.ALLOWED_FRONTEND_ORIGINS))) {
+  if (
+    !redirect ||
+    !isAllowedRedirect(redirect, parseAllowedOrigins(c.env.ALLOWED_FRONTEND_ORIGINS))
+  ) {
     return c.json(errorBody('redirect must be an allowed frontend URL'), 400);
   }
-  const state = await issueOAuthState(c.env.JWT_SECRET, redirect);
+  // Sign the normalized form, so the later Location header is exactly what
+  // was validated.
+  const state = await issueOAuthState(c.env.JWT_SECRET, new URL(redirect).href);
   const params = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID,
     redirect_uri: googleCallbackUrl(c),
@@ -108,10 +113,10 @@ interface GoogleCallbackDeps {
 // target is unknown). Every other outcome is a redirect to the frontend
 // carrying the result in the URL fragment, which is never sent to servers.
 export async function resolveGoogleCallback(
-  query: { state: string; code?: string; error?: string },
+  query: { state?: string; code?: string; error?: string },
   deps: GoogleCallbackDeps,
 ): Promise<GoogleCallbackOutcome> {
-  const state = await verifyOAuthState(query.state, deps.env.JWT_SECRET);
+  const state = query.state ? await verifyOAuthState(query.state, deps.env.JWT_SECRET) : null;
   // Defense in depth: the redirect was validated when the state was issued,
   // but it is re-checked against the current allow-list before use.
   if (
