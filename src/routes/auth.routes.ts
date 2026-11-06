@@ -5,7 +5,7 @@ import type { AppEnv } from '../app';
 import type { AuthDb } from '../db/auth/client';
 import { requireUser } from '../middleware/auth';
 import { googleCallbackQuerySchema, loginSchema, registerSchema } from '../schemas/auth.schema';
-import { getMe, login, loginWithGoogle, register, type LoginResult } from '../services/auth.service';
+import { deleteAccount, getMe, login, loginWithGoogle, register, type LoginResult } from '../services/auth.service';
 import {
   exchangeGoogleCode,
   type GoogleOAuthEnv,
@@ -39,6 +39,22 @@ authRoutes.get('/me', requireUser, async (c) => {
     return c.json(errorBody('Invalid or expired token'), 401);
   }
   return c.json({ data: user });
+});
+
+authRoutes.delete('/me', requireUser, async (c) => {
+  const identity = c.var.identity;
+  if (identity.scope !== 'user') {
+    return c.json(errorBody('Authentication required'), 401);
+  }
+  await deleteAccount(
+    {
+      authDb: c.var.authDb,
+      jobTrackerDb: c.var.jobTrackerDb,
+      healthMonitorDb: c.var.healthMonitorDb,
+    },
+    identity.userId,
+  );
+  return c.body(null, 204);
 });
 
 // Derived from the incoming request rather than a configured base-URL env

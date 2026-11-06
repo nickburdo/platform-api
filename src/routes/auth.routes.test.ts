@@ -1,5 +1,26 @@
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAuthDb } from '../db/auth/client';
+import { findUserById } from '../db/auth/users.repository';
+import { createHealthMonitorDb } from '../db/health-monitor/client';
+import {
+  createGlucoseMeasurement,
+  listGlucoseMeasurements,
+} from '../db/health-monitor/glucose.repository';
+import {
+  bloodPressureMeasurements,
+  glucoseMeasurements,
+  symptomEntries,
+  weightMeasurements,
+} from '../db/health-monitor/schema';
+import { createSymptomEntry, listSymptomEntries } from '../db/health-monitor/symptoms.repository';
+import { freshHealthMonitorDb } from '../db/health-monitor/test-helpers';
+import { createJobTrackerDb } from '../db/job-tracker/client';
+import {
+  createJobApplication,
+  listJobApplications,
+} from '../db/job-tracker/job-applications.repository';
+import { freshJobTrackerDb } from '../db/job-tracker/test-helpers';
 import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
 import { issueToken } from '../utils/jwt';
@@ -307,5 +328,102 @@ describe('resolveGoogleCallback (temporary sub lookup until Task 6)', () => {
       { authDb: db, env: oauthEnv, redirectUri: REDIRECT_URI, exchange },
     );
     expect(outcome).toEqual({ ok: false, reason: 'invalid_credentials' });
+  });
+});
+
+describe('DELETE /auth/me', () => {
+  const AT = '2026-07-01T00:00:00.000Z';
+  const stamps = (userId: string | null) => ({
+    userId,
+    createdAt: AT,
+    updatedAt: AT,
+  });
+  const healthStamps = (userId: string | null) => ({
+    ...stamps(userId),
+    ignored: false,
+    reason: '',
+  });
+
+  async function seedJob(id: string, userId: string | null) {
+    await createJobApplication(createJobTrackerDb(env.JOB_TRACKER_DB), {
+      id,
+      company: 'Co',
+      position: 'Engineer',
+      ...stamps(userId),
+    });
+  }
+
+  async function seedHealth(prefix: string, userId: string | null) {
+    const db = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
+    await createGlucoseMeasurement(db, {
+      id: `${prefix}-glucose`,
+      measuredAt: AT,
+      fastingValue: 90,
+      ...healthStamps(userId),
+    });
+    await createSymptomEntry(db, {
+      id: `${prefix}-symptom`,
+      happenedAt: AT,
+      type: 'HEADACHE',
+      intensity: 3,
+      ...healthStamps(userId),
+    });
+  }
+
+  beforeEach(async () => {
+    await freshJobTrackerDb();
+    await freshHealthMonitorDb(
+      glucoseMeasurements,
+      bloodPressureMeasurements,
+      weightMeasurements,
+      symptomEntries,
+    );
+  });
+
+  it('removes only the caller data and user row, then the old token is dead', async () => {
+    const a = await seedUserAndGetToken({ username: 'alice' });
+    const b = await seedUserAndGetToken({ username: 'bob' });
+    await seedJob('job-a', a.userId);
+    await seedJob('job-b', b.userId);
+    await seedJob('job-demo', null);
+    await seedHealth('a', a.userId);
+    await seedHealth('demo', null);
+
+    const res = await request('/auth/me', { method: 'DELETE', headers: bearer(a.token) });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+
+    const jobDb = createJobTrackerDb(env.JOB_TRACKER_DB);
+    const healthDb = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
+    const jobIds = async (ownerId: string | null) =>
+      (await listJobApplications(jobDb, { page: 1, limit: 20, ownerId })).rows.map((j) => j.id);
+    expect(await jobIds(a.userId)).toEqual([]);
+    expect(await jobIds(b.userId)).toEqual(['job-b']);
+    expect(await jobIds(null)).toEqual(['job-demo']);
+    const range = { ownerId: a.userId };
+    expect(await listGlucoseMeasurements(healthDb, range)).toHaveLength(0);
+    expect(await listSymptomEntries(healthDb, range)).toHaveLength(0);
+    expect(await listGlucoseMeasurements(healthDb, { ownerId: null })).toHaveLength(1);
+    expect(await findUserById(createAuthDb(env.AUTH_DB), a.userId)).toBeUndefined();
+    expect(await findUserById(createAuthDb(env.AUTH_DB), b.userId)).toBeDefined();
+
+    const get = await request('/jobs', { headers: bearer(a.token) });
+    expect(get.status).toBe(401);
+    expect(((await get.json()) as ErrorEnvelope).error.message).toBe('Invalid or expired token');
+    const post = await requestJson(
+      'POST',
+      '/jobs',
+      { company: 'X', position: 'Y' },
+      bearer(a.token),
+    );
+    expect(post.status).toBe(401);
+    const again = await request('/auth/me', { method: 'DELETE', headers: bearer(a.token) });
+    expect(again.status).toBe(401);
+  });
+
+  it('rejects a guest with 401 Authentication required', async () => {
+    const res = await request('/auth/me', { method: 'DELETE' });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as ErrorEnvelope).error.message).toBe('Authentication required');
   });
 });

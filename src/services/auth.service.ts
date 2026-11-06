@@ -1,13 +1,18 @@
 import type { z } from 'zod';
 import type { AuthDb } from '../db/auth/client';
+import type { HealthMonitorDb } from '../db/health-monitor/client';
+import type { JobTrackerDb } from '../db/job-tracker/client';
 import type { User } from '../db/auth/schema';
 import {
+  deleteUserById,
   findUserByGoogleSub,
   findUserById,
   findUserByUsername,
   insertUser,
   isUniqueViolation,
 } from '../db/auth/users.repository';
+import { deleteHealthDataByUserId } from '../db/health-monitor/account-data.repository';
+import { deleteJobApplicationsByUserId } from '../db/job-tracker/job-applications.repository';
 import type { loginSchema, registerSchema } from '../schemas/auth.schema';
 import { issueToken } from '../utils/jwt';
 import { hashPassword, verifyPassword } from '../utils/password';
@@ -112,4 +117,19 @@ export async function loginWithGoogle(
   }
   const token = await issueToken(user.id, jwtSecret);
   return { token, user: toPublicUser(user) };
+}
+
+export interface AccountDeletionDbs {
+  authDb: AuthDb;
+  jobTrackerDb: JobTrackerDb;
+  healthMonitorDb: HealthMonitorDb;
+}
+
+// C6: business data first, the user row last. The databases cannot share a
+// transaction, so if a step fails the user row still exists and the caller
+// can retry the whole deletion.
+export async function deleteAccount(dbs: AccountDeletionDbs, userId: string): Promise<void> {
+  await deleteJobApplicationsByUserId(dbs.jobTrackerDb, userId);
+  await deleteHealthDataByUserId(dbs.healthMonitorDb, userId);
+  await deleteUserById(dbs.authDb, userId);
 }

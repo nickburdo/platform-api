@@ -1,10 +1,21 @@
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuthDb } from '../db/auth/client';
 import { users } from '../db/auth/schema';
 import { freshAuthDb } from '../db/auth/test-helpers';
 import { hashPassword } from '../utils/password';
 import { verifyToken } from '../utils/jwt';
-import { getMe, login, loginWithGoogle, register, toPublicUser } from './auth.service';
+import { findUserById } from '../db/auth/users.repository';
+import { createHealthMonitorDb } from '../db/health-monitor/client';
+import { createJobTrackerDb } from '../db/job-tracker/client';
+import {
+  deleteAccount,
+  getMe,
+  login,
+  loginWithGoogle,
+  register,
+  toPublicUser,
+} from './auth.service';
 
 let db: AuthDb;
 
@@ -138,5 +149,31 @@ describe('getMe', () => {
 
   it('returns undefined for an unknown id', async () => {
     expect(await getMe(db, 'does-not-exist')).toBeUndefined();
+  });
+});
+
+describe('deleteAccount', () => {
+  it('leaves the user row in place when the health-monitor step fails, so a retry can finish', async () => {
+    await seedUser();
+    const realHealthDb = createHealthMonitorDb(env.HEALTH_MONITOR_DB);
+    const failingHealthDb = Object.assign(Object.create(realHealthDb), {
+      batch: async () => {
+        throw new Error('batch failed');
+      },
+    }) as typeof realHealthDb;
+    const dbs = {
+      authDb: db,
+      jobTrackerDb: createJobTrackerDb(env.JOB_TRACKER_DB),
+      healthMonitorDb: failingHealthDb,
+    };
+
+    await expect(deleteAccount(dbs, 'user-1')).rejects.toThrow('batch failed');
+    expect(await findUserById(db, 'user-1')).toBeDefined();
+
+    await deleteAccount(
+      { ...dbs, healthMonitorDb: createHealthMonitorDb(env.HEALTH_MONITOR_DB) },
+      'user-1',
+    );
+    expect(await findUserById(db, 'user-1')).toBeUndefined();
   });
 });
