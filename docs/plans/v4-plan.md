@@ -299,6 +299,7 @@ Implementation-level decisions made while writing this plan (the product decisio
 - `auth-db` bookmark: `00000017-00000000-0000511c-a89bd4cd4a72886541c0826f9d847a90`
 - `job-tracker-db` bookmark: `00000012-00000000-0000511c-50a73caab17c76f916a6036ac11a6a16`
 - `health-monitor-db` bookmark: `00000017-00000000-0000511c-778f6bb3960316d26468e9230fa40e94`
+- Deployed V4 Worker version: `6987b8fd-842a-4e4b-95fd-9609ca7cb115` (migrations applied auth → job-tracker → health-monitor, reseeded, live checks passed)
 
 ### Task 10: Close-out docs
 
