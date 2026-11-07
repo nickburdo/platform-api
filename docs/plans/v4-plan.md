@@ -294,6 +294,12 @@ Implementation-level decisions made while writing this plan (the product decisio
 - [ ] **Step 7 (user, live):** Google sign-in through `https://platform-api.nick-burdo.workers.dev/auth/google?redirect=http://localhost:5173/auth/callback` (any local page) — browser ends on `…#token=…`; Google consent screen does **not** mention email.
 - [ ] **Step 8:** Record Version ID in this plan.
 
+**Deploy record (2026-11-07)** — pre-apply restore points:
+- V3 Worker version (rollback target): `e08b5dd4-93b0-4796-9814-fda3a156896c`
+- `auth-db` bookmark: `00000017-00000000-0000511c-a89bd4cd4a72886541c0826f9d847a90`
+- `job-tracker-db` bookmark: `00000012-00000000-0000511c-50a73caab17c76f916a6036ac11a6a16`
+- `health-monitor-db` bookmark: `00000017-00000000-0000511c-778f6bb3960316d26468e9230fa40e94`
+
 ### Task 10: Close-out docs
 
 - [ ] **Step 1:** Tick this plan's checkboxes, set Status → Complete; tick roadmap V4; ADR-014 stays Accepted.
