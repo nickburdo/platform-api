@@ -14,6 +14,7 @@ import { docsRoutes } from './routes/docs.routes';
 import { glucoseRoutes } from './routes/glucose.routes';
 import { healthRoutes } from './routes/health.routes';
 import { jobsRoutes } from './routes/jobs.routes';
+import { privacyRoutes } from './routes/privacy.routes';
 import { symptomsRoutes } from './routes/symptoms.routes';
 import { weightRoutes } from './routes/weight.routes';
 
@@ -56,6 +57,7 @@ app.notFound(handleNotFound);
 app.route('/auth', authRoutes);
 app.route('/health', healthRoutes);
 app.route('/', docsRoutes);
+app.route('/', privacyRoutes);
 app.route('/jobs', jobsRoutes);
 app.route('/glucose', glucoseRoutes);
 app.route('/blood-pressure', bloodPressureRoutes);

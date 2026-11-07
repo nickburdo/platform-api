@@ -44,7 +44,14 @@
 
 - **App name** — любое, например `Platform API`. Это то, что увидит пользователь на экране согласия ("Platform API wants to access your Google Account").
 - **User support email** — ваш email.
-- **App logo** — необязательно, можно пропустить.
+- **App logo** — **не загружать**: с логотипом опубликованное приложение требует верификации Google.
+- **App domain** (нужно для публикации, раздел Branding в Google Auth Platform — прямая ссылка https://console.cloud.google.com/auth/branding?project=595614139717):
+  - **Application home page** — `https://platform-api.nick-burdo.workers.dev/docs`
+  - **Application privacy policy link** — `https://platform-api.nick-burdo.workers.dev/privacy` (страница из `src/routes/privacy.routes.ts`, v4.1)
+  - **Authorized domains** — `nick-burdo.workers.dev`
+- **Developer contact information** — ваш email.
+
+В новом интерфейсе (Google Auth Platform) эти поля находятся в разделе **Branding**, scopes — в **Data Access**, публикация — в **Audience**.
 
 ### 3.3 Scopes
 

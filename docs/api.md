@@ -209,6 +209,18 @@ Authorization: Bearer <access_token>
 
 ---
 
+## Public Pages
+
+Pages served by the API that are not part of the JSON API (and not part of the OpenAPI document). No authentication.
+
+| Path | Content |
+|------|---------|
+| `GET /docs` | Swagger UI for this API |
+| `GET /openapi.json` | The OpenAPI document |
+| `GET /privacy` | Privacy policy (HTML, English) — linked from the Google OAuth consent screen (Google Auth Platform → Branding) |
+
+---
+
 # Job Tracker API
 
 Job Tracker manages job applications.
