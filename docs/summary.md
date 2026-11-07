@@ -8,7 +8,7 @@
 
 **V1** (Job Tracker + Health Monitor), **V2** (JWT-аутентификация), **V3** (Google Sign-In, OpenAPI, Swagger UI, DX, мониторинг) и **V4** (открытая многопользовательская модель) — **все реализованы, задеплоены, покрыты тестами, прошли review**. Прод: https://platform-api.nick-burdo.workers.dev.
 
-Текущий прод: **Version ID `6987b8fd-842a-4e4b-95fd-9609ca7cb115`** (V4, задеплоен 2026-11-07). Точки отката (V3 version ID + Time Travel bookmarks трёх БД) записаны в `v4-plan.md`, Task 9.
+Текущий прод: **Version ID `19a15177-132f-49ae-907d-6a1b2eef4ffa`** (V4.1 — страница `/privacy`, задеплоен 2026-11-07; V4 был `6987b8fd-842a-4e4b-95fd-9609ca7cb115`). Точки отката (V3 version ID + Time Travel bookmarks трёх БД) записаны в `v4-plan.md`, Task 9.
 
 ## Version 4 — что изменилось (ADR-014)
 
@@ -26,12 +26,11 @@
 - `npm run dev` (`wrangler dev --remote`) работает на **прод-базах**, и Google Sign-In в этом режиме локально **не работает** (хост подменяется на превью `*.workers.dev`). Для локального Google — `npx wrangler dev` с копией конфига, где у D1-биндингов `"remote": true` (см. `development.md`).
 - После остановки `wrangler dev` из инструмента на Windows может остаться `workerd.exe` на порту 8787 — убить перед перезапуском.
 - Wrangler авторизован через OAuth (`wrangler login`), токен в `.env` не нужен; `.env` в `.gitignore`.
-- Google Cloud Console: приложение опубликовано (In production), scopes пустые (код запрашивает только `openid`), в Branding home page и privacy policy временно указывают на `/docs`.
+- Google Cloud Console: приложение опубликовано (In production), scopes пустые (код запрашивает только `openid`), в Branding home page → `/docs`, privacy policy → `/privacy` (v4.1).
 
 ## Что дальше
 
 V4 закрыта. Возможные следующие шаги (не запланированы, требуют обсуждения и плана по CLAUDE.md):
-- простая страница `/privacy` вместо ссылки на `/docs` в Google Branding;
 - `verifyToken` может дополнительно отвергать JWT с claim `purpose` (defense in depth; сейчас путаница токенов невозможна и закреплена тестами);
 - бэклог `roadmap.md` → "Future Versions" (PostgreSQL, Redis, Queues/R2, rate limiting и т.д.) — только при реальной потребности.
 
