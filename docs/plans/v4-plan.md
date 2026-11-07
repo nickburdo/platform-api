@@ -1,6 +1,6 @@
 # Version 4 — Implementation Plan
 
-> Status: **Approved** (2026-11-06) — execution: subagent-driven. **Revised 2026-11-06** after the final whole-branch review: Task 8b added (Decisions 22–25, spec U17–U18), approved by the user.
+> Status: **Approved** (2026-11-06) — execution: subagent-driven. **Revised 2026-11-06** after the final whole-branch review: Task 8b added (Decisions 22–25, spec U17–U18), approved by the user. **Revised 2026-11-07:** Task 8c (staging rehearsal, Decision 26) added, approved by the user.
 > Depends on: Version 3 (`v3-plan.md`, Complete 2026-07-03)
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -67,6 +67,7 @@ Implementation-level decisions made while writing this plan (the product decisio
 23. **`POST /auth/google/link/complete`** links only when caller `userId` === ticket `userId`; mismatch is reported exactly like an invalid ticket (`400`), so nothing about the ticket owner leaks.
 24. **Login password `.max(128)`** for symmetry with register.
 25. **Deploy safety:** pre-apply `migrations list` check, Time Travel bookmarks and a documented combined rollback (code rollback alone would leave V3 code on the V4 schema).
+26. **Staging rehearsal before deploy:** three temporary cloud D1 databases (`*-staging`) filled from a read-only `d1 export --remote` of prod, migrated and seeded exactly as Task 9 would, then exercised through `wrangler dev --remote` with a git-ignored `wrangler.staging.jsonc`. `wrangler.jsonc` and the prod databases are never written. Wrangler credentials come from a git-ignored `.env` (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
 
 ---
 
@@ -266,6 +267,21 @@ Implementation-level decisions made while writing this plan (the product decisio
 - [ ] **Step 7 (Decision 25):** `deployment.md` — before applying migrations run `npx wrangler d1 migrations list <db> --remote` for each DB (only `0001_*` pending); record `npx wrangler d1 time-travel info <db>` for each DB; rollback = D1 Time Travel restore of all three DBs **plus** `npx wrangler rollback`; note that OAuth states issued before the deploy fail (in-flight Google logins get 401, retry); note that `.http` runs against prod leave throwaway accounts (delete them or use the delete-me flow).
 - [ ] **Step 8:** registry + `npm run openapi:generate` (valid, ≤ 24 warnings + new endpoint's operationId); `http/auth.http` — link complete flow (document that Google requires a browser; restore that header note).
 - [ ] **Step 9:** gate, commit `fix: V4 post-review — two-step Google linking, CSRF docs, deploy safety`.
+
+### Task 8c: Staging rehearsal on cloud D1 (revision 2026-11-07, Decision 26)
+
+**Files:** `.gitignore` (add `.env`, `wrangler.staging.jsonc`); temporary, never committed: `.env`, `wrangler.staging.jsonc`, export dumps in the scratchpad.
+
+- [ ] **Step 1:** Add `.env` and `wrangler.staging.jsonc` to `.gitignore`; commit `chore: ignore .env and staging wrangler config`.
+- [ ] **Step 2 (user, manual):** create a Cloudflare API token (template "Edit Cloudflare Workers" + Account → D1 → Edit) and put `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` into `.env`.
+- [ ] **Step 3:** Access check: `npx wrangler whoami`, `npx wrangler d1 list` (the three prod DBs visible).
+- [ ] **Step 4:** Create `job-tracker-db-staging`, `health-monitor-db-staging`, `auth-db-staging` (`npx wrangler d1 create <name>`).
+- [ ] **Step 5:** Export each prod DB read-only (`npx wrangler d1 export <db> --remote --output <scratchpad>/<db>.sql`) and import into its staging copy (`npx wrangler d1 execute <db>-staging --remote --file <dump>`); the dump includes `d1_migrations`, so the staging migration state equals prod.
+- [ ] **Step 6:** Write `wrangler.staging.jsonc` = `wrangler.jsonc` with the three bindings pointing at the staging DB names/ids (same binding names and `migrations_dir`).
+- [ ] **Step 7 (rehearsal of Task 9 Steps 2–3, 5):** C11 safety counts on staging; `migrations list` (only `0001_*` pending); apply auth → job-tracker → health-monitor with `-c wrangler.staging.jsonc`; reseed with the three `seed.sql` files against the staging DBs.
+- [ ] **Step 8:** `npx wrangler dev --remote -c wrangler.staging.jsonc` on `localhost:8787`; live checks via curl: guest `GET /jobs` = 17 demo rows; guest `POST /jobs` → `401`; register → `201`; own `GET /jobs` empty; create/patch/delete own job; health-monitor own data; `/docs`, `/openapi.json` → `200`; `DELETE /auth/me` → `204`, old token → `401`.
+- [ ] **Step 9 (user, browser):** Google sign-in via `http://127.0.0.1:8787/auth/google?redirect=http://localhost:5173/auth/callback` → `#token=`; then the two-step link flow for a password account.
+- [ ] **Step 10:** Teardown: `npx wrangler d1 delete` the three staging DBs, delete `wrangler.staging.jsonc` and the dumps; record results in the SDD ledger. Any failure in Steps 7–9 → stop, report, plan revision before Task 9.
 
 ### Task 9: Deployment (only on explicit user request)
 
