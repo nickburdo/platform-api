@@ -417,16 +417,16 @@ Turn the single-admin API into a small multi-user service: open registration by 
 
 Mirrors `plans/v4-plan.md`.
 
-- [ ] Docs-first pass: `api.md`, `models.md`, `architecture.md`, `decisions.md` (ADR-014), `roadmap.md`, `development.md`, `deployment.md`, `google-console.md`, `README.md`, new `frontend-guide.md` and `connecting-a-frontend.md`
-- [ ] `auth-db` users rebuilt (username, optional password, optional Google `sub`), tokens without roles, identity with user-existence check, `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
-- [ ] Job Tracker per-user scope (`user_id` replaces `is_demo`, guest writes → `401 Authentication required`)
-- [ ] Health Monitor per-user scope (all four tables and the dashboard)
-- [ ] Account deletion with all data (`DELETE /auth/me`)
-- [ ] Google Sign-In by OpenID `sub` (scope `openid` only), account auto-created, token returned to an allow-listed frontend via the URL fragment
-- [ ] Account linking in both directions (`POST /auth/google/link`, `POST /auth/me/password`)
-- [ ] OpenAPI specification and `.http` collection updated
-- [ ] Deployment (only on explicit request): safety check for non-demo rows, migrations, deploy, reseed, live verification
-- [ ] Close-out docs
+- [x] Docs-first pass: `api.md`, `models.md`, `architecture.md`, `decisions.md` (ADR-014), `roadmap.md`, `development.md`, `deployment.md`, `google-console.md`, `README.md`, new `frontend-guide.md` and `connecting-a-frontend.md`
+- [x] `auth-db` users rebuilt (username, optional password, optional Google `sub`), tokens without roles, identity with user-existence check, `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
+- [x] Job Tracker per-user scope (`user_id` replaces `is_demo`, guest writes → `401 Authentication required`)
+- [x] Health Monitor per-user scope (all four tables and the dashboard)
+- [x] Account deletion with all data (`DELETE /auth/me`)
+- [x] Google Sign-In by OpenID `sub` (scope `openid` only), account auto-created, token returned to an allow-listed frontend via the URL fragment
+- [x] Account linking in both directions (`POST /auth/google/link`, `POST /auth/me/password`)
+- [x] OpenAPI specification and `.http` collection updated
+- [x] Deployment (only on explicit request): safety check for non-demo rows, migrations, deploy, reseed, live verification
+- [x] Close-out docs
 
 ---
 
@@ -434,16 +434,16 @@ Mirrors `plans/v4-plan.md`.
 
 Version 4 is complete when:
 
-- [ ] Guests see demo data read-only; every write returns `401 Authentication required`
-- [ ] Registration by username (no email) returns a token; login works by username/password or Google
-- [ ] Google sign-in uses the `openid` scope only, creates accounts by `sub`, and delivers the token to allow-listed frontends only
-- [ ] Users see and change only their own data; demo data is invisible to them
-- [ ] `DELETE /auth/me` removes the account and all of its data; its old token returns `401`
-- [ ] No `email`, `role` or `isDemo` remains in the API, code or database (outside migration history)
-- [ ] Test suite updated and extended; gate green; OpenAPI lint-clean
-- [ ] `frontend-guide.md` and `connecting-a-frontend.md` are published and linked from `README.md`
-- [ ] Account linking works in both directions
-- [ ] Deployed and live-verified
+- [x] Guests see demo data read-only; every write returns `401 Authentication required`
+- [x] Registration by username (no email) returns a token; login works by username/password or Google
+- [x] Google sign-in uses the `openid` scope only, creates accounts by `sub`, and delivers the token to allow-listed frontends only
+- [x] Users see and change only their own data; demo data is invisible to them
+- [x] `DELETE /auth/me` removes the account and all of its data; its old token returns `401`
+- [x] No `email`, `role` or `isDemo` remains in the API, code or database (outside migration history)
+- [x] Test suite updated and extended; gate green; OpenAPI lint-clean
+- [x] `frontend-guide.md` and `connecting-a-frontend.md` are published and linked from `README.md`
+- [x] Account linking works in both directions
+- [x] Deployed and live-verified
 
 ---
 

@@ -183,7 +183,7 @@ Google Sign-In creates and finds accounts by Google's stable account id (`sub`) 
 2. Create an OAuth 2.0 Client ID (type: Web application).
 3. Add both authorized redirect URIs to the **same** client:
    - `https://platform-api.nick-burdo.workers.dev/auth/google/callback` (production)
-   - `http://127.0.0.1:8787/auth/google/callback` (local dev via `wrangler dev --remote`)
+   - `http://127.0.0.1:8787/auth/google/callback` (local dev — works only with the Worker in the local runtime and `"remote": true` D1 bindings, not under `wrangler dev --remote`; see `development.md`)
 4. Copy the generated Client ID / Client Secret into `wrangler secret put` (above) and `.dev.vars`.
 
 The frontends that Google may send the user back to are an application setting, not a Google Console one: `ALLOWED_FRONTEND_ORIGINS` in `wrangler.jsonc` (see `connecting-a-frontend.md`).
