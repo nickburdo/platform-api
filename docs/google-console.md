@@ -76,7 +76,7 @@ Scope `email` (`.../auth/userinfo.email`), который требовался �
 - **Authorized JavaScript origins** — **оставить пустым**. Это поле нужно только если браузер сам, из JS-кода, обращается к Google (Google Identity Services SDK, кнопка «Sign in with Google», One Tap и т.п.). В этом проекте flow другой (Decision #7 в `v3-plan.md`): браузер просто переходит обычным редиректом на `GET /auth/google`, сервер отвечает 302 на страницу согласия Google, а обмен кода на токен — это server-to-server `fetch` с бэкенда. Ни один запрос к Google не идёт из JS в браузере, так что CORS-whitelist через это поле не применяется.
 - **Authorized redirect URIs** — добавить **оба** адреса на этот же клиент (Google поддерживает несколько redirect URI на одном клиенте, per `v3-plan.md` Decision #13):
   - `https://platform-api.nick-burdo.workers.dev/auth/google/callback` (продакшен)
-  - `http://127.0.0.1:8787/auth/google/callback` (локальная разработка через `wrangler dev --remote`)
+  - `http://127.0.0.1:8787/auth/google/callback` (локальная разработка; работает только когда Worker запущен в локальном рантайме — `npx wrangler dev` с `"remote": true` на D1-биндингах. Под `npm run dev` (`wrangler dev --remote`) Worker видит адрес превью `*.workers.dev`, и вход через Google локально не работает — см. `development.md`, раздел про Google Sign-In)
 
 Нажмите **Create**.
 

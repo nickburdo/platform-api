@@ -223,7 +223,7 @@ Version 4 changes the schema of all three databases and the Worker code together
    npx wrangler d1 time-travel info health-monitor-db
    ```
 
-   Copy the three printed bookmarks (and the `time-travel restore` commands Wrangler prints with them) into `plans/v4-plan.md` **before** applying anything. Also note the currently deployed Worker version (Cloudflare Dashboard → Workers → `platform-api` → Deployments), the code `npx wrangler rollback` returns to.
+   Copy the three printed bookmarks (and the `time-travel restore` commands Wrangler prints with them) into `plans/v4-plan.md` **before** applying anything. Also record the currently deployed (V3) Worker **version ID** — run `npx wrangler deployments list` and copy the version ID of the latest deployment (or Cloudflare Dashboard → Workers → `platform-api` → Deployments). The rollback below targets this exact version.
 5. **Apply migrations**, in this order:
 
    ```bash
@@ -253,8 +253,10 @@ Version 4 changes the schema of all three databases and the Worker code together
 npx wrangler d1 time-travel restore auth-db --bookmark=<auth-db bookmark from step 4>
 npx wrangler d1 time-travel restore job-tracker-db --bookmark=<job-tracker-db bookmark from step 4>
 npx wrangler d1 time-travel restore health-monitor-db --bookmark=<health-monitor-db bookmark from step 4>
-npx wrangler rollback
+npx wrangler rollback <V3 version ID from step 4>
 ```
+
+Always pass the version ID: a bare `npx wrangler rollback` returns to the *previous* deployment, which is no longer V3 if anything was deployed after step 6. Time Travel can restore a database to any point within the last 30 days (Workers Free plan: 7 days), so a rollback must happen inside that window.
 
 All three databases must be restored — restoring only some leaves a mix of V3 and V4 schemas. A restore overwrites the database in place (anything written after the bookmark, including accounts registered on V4, is lost) and prints a bookmark that undoes it.
 

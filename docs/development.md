@@ -392,6 +392,7 @@ Useful during development:
 
 - register a throw-away account from `http/auth.http` and delete it with `DELETE /auth/me` when done (this also removes its data);
 - Google Sign-In locally: use `http://localhost:<port>` as the `redirect` (always allowed), e.g. `GET /auth/google?redirect=http://localhost:5173/auth/callback`.
+- **Google Sign-In does not work under `npm run dev`.** `wrangler dev --remote` rewrites the request URL to the preview host (`<worker-name>.<subdomain>.workers.dev`), so the callback URL the Worker derives from the request is not `http://127.0.0.1:8787/auth/google/callback` and Google rejects it (or sends the browser to a host that does not serve the preview). To test Google locally, run the Worker in the local runtime with **remote D1 bindings**: a copy of `wrangler.jsonc` (keep it out of git) with `"remote": true` on each `d1_databases` entry, started with `npx wrangler dev -c <that file>`. The Worker then executes locally (request host stays `127.0.0.1:8787`) while every D1 call goes to the cloud database the binding names — point the bindings at throwaway copies, not at production, when testing unreleased schema changes. Stopping `wrangler dev` from a tool can leave `workerd.exe` listening on port 8787; kill it before restarting, or requests reach the old process.
 
 ---
 
