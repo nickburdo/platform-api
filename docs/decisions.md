@@ -731,7 +731,7 @@ Accepted (2026-11-08, Version 4.2 planning). See `plans/v4.2-plan.md`.
 ### Consequences
 
 - The newest demo record can be up to ~48 h old, depending on the gap between the seed time of day and 00:00 UTC.
-- The Worker has a second entrypoint (`scheduled`) and a trigger in `wrangler.jsonc`; the trigger is registered by `wrangler deploy`, with no dashboard setup. Trigger changes take up to 15 minutes to propagate.
+- The Worker has a second entrypoint (`scheduled`) and a trigger in `wrangler.jsonc`; the trigger is registered by `wrangler deploy`, with no dashboard setup. Trigger changes take up to 15 minutes to propagate. Triggers are not versioned: `wrangler rollback` leaves them in place, so a rollback must remove the trigger first (`deployment.md`, V4.2 rollback).
 - A failed run is logged and rethrown; the code adds no retry of its own. The next daily run catches up, because N accumulates, and any repeated run is harmless (N = 0).
 - A bug in the `user_id IS NULL` filter would shift real user data; a repo test pins it.
 

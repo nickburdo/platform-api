@@ -272,7 +272,7 @@ Version 4.2 adds a Cron Trigger and one table in `health-monitor-db` (ADR-015). 
 },
 ```
 
-Trigger changes take up to 15 minutes to propagate after a deploy. Workers Free allows 5 Cron Triggers per account; this project uses 1. To disable the trigger, set `"crons": []` and deploy — commenting out the key does **not** remove a deployed trigger.
+Trigger changes take up to 15 minutes to propagate after a deploy. Workers Free allows 5 Cron Triggers per account; this project uses 1. To disable the trigger, set `"crons": []` and run `npx wrangler deploy` (or `npx wrangler triggers deploy`) — commenting out the key does **not** remove a deployed trigger. Triggers are not part of a Worker version, so `wrangler rollback` does not change them either.
 
 Deploy **only on an explicit request**, in this order:
 
@@ -283,7 +283,16 @@ Deploy **only on an explicit request**, in this order:
 5. **Live check right away:** guest `GET /dashboard` → `200` with demo data; `npx wrangler d1 execute health-monitor-db --remote --command "SELECT * FROM demo_refresh_state"` → one row.
 6. **Live check after the first 00:00 UTC run:** the run is visible in the Worker logs (`"event":"demo-date-shift"`), and `refreshed_at` has advanced by whole days — or stayed the same, if less than 24 h passed since step 3.
 
-**V4.2 rollback.** `npx wrangler rollback <version ID from step 1>` — this also removes the trigger, since triggers belong to the deployed configuration. `npm run db:seed:health-monitor` restores the demo rows; the bookmark from step 1 is the fallback if user rows were affected. The extra table can stay.
+**V4.2 rollback.** Cron Triggers are not part of a Worker version: `wrangler rollback` leaves them in place, and the old version has no `scheduled` handler, so every nightly run would fail. Remove the trigger first, then roll back the code:
+
+```bash
+# 1. in wrangler.jsonc set  "triggers": { "crons": [] }
+npx wrangler triggers deploy
+# 2. roll back the code
+npx wrangler rollback <version ID from step 1>
+```
+
+`npm run db:seed:health-monitor` restores the demo rows; the bookmark from step 1 is the fallback if user rows were affected. The extra table can stay.
 
 ---
 
