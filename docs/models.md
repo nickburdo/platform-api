@@ -61,7 +61,20 @@ Rules:
 - the client never sends `userId`; it is also never returned in API responses;
 - the server derives the scope from the caller's identity: no valid token (guest) → demo records only (`userId IS NULL`), read-only; valid token → records where `userId` equals the caller's id;
 - the worlds never overlap — guests never see user data, users never see demo data or each other's data — including by-id operations, where a record outside the caller's scope behaves as nonexistent (`404`);
-- demo records are created and changed only through the seed.
+- demo records are created and changed only through the seed — plus, for Health Monitor, the daily date shift below.
+
+### Health Monitor Demo Date Shift (V4.2)
+
+A daily Cron Trigger (00:00 UTC) moves every date of the Health Monitor demo records — `measuredAt` / `happenedAt`, `createdAt`, `updatedAt` — forward by the number of **whole days** elapsed since the last shift, so the demo data keeps looking current. User records are never touched. Job Tracker demo records are not shifted. See ADR-015.
+
+The state is a single-row internal table in `health-monitor-db` (not exposed by the API):
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | integer, primary key | always `1` (`CHECK (id = 1)`) |
+| `refreshed_at` | text, ISO-8601 | moment the demo dates correspond to; set by the seed, advanced by exactly N days on every shift |
+
+Without this row (no seed run since the table was created) the shift does nothing.
 
 ---
 

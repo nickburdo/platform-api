@@ -353,9 +353,20 @@ Version 1 includes demo seed data as **plain SQL fixture files**, one per databa
 - `src/db/job-tracker/seed.sql` — 17 job applications covering all 9 statuses;
 - `src/db/health-monitor/seed.sql` — 10 rows in each of the four measurement tables.
 
-Every seeded record is a demo record: `user_id` is `NULL`. Row IDs are fixed (stable across re-runs); dates are computed relative to the run time via SQLite date functions, so demo data always looks current.
+Every seeded record is a demo record: `user_id` is `NULL`. Row IDs are fixed (stable across re-runs); dates are computed relative to the run time via SQLite date functions, so demo data looks current right after a seed run.
 
-Seeding is **idempotent and safe to re-run**: each file first deletes only `WHERE user_id IS NULL` rows, then re-inserts the fixtures — user data is never touched. Demo records are changed only through the seed.
+Seeding is **idempotent and safe to re-run**: each file first deletes only `WHERE user_id IS NULL` rows, then re-inserts the fixtures — user data is never touched. Demo records are changed only through the seed and, for Health Monitor, the daily date shift below.
+
+## Health Monitor Demo Date Shift (Version 4.2)
+
+Job Tracker demo dates age after a seed run until the next manual reseed. Health Monitor demo dates are kept current by a daily Cron Trigger (00:00 UTC): the `scheduled` handler in `src/index.ts` calls `shiftDemoDates` (`src/db/health-monitor/demo-shift.repository.ts`), which moves all dates of the demo rows forward by the whole days elapsed since the last shift. The state is the single row of `demo_refresh_state`; `src/db/health-monitor/seed.sql` (re)writes it, so a reseed resets the shift. Without that row the handler does nothing. See ADR-015 and `models.md`.
+
+**Do not trigger the handler through `npm run dev`.** The dev server runs against the production databases, so a local trigger shifts the real demo data. The logic is covered by the repo test `demo-shift.repository.repo.test.ts` (local D1). If a live run is really needed, record a Time Travel bookmark of `health-monitor-db` first, then:
+
+```bash
+npx wrangler dev --remote --test-scheduled
+curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=0+0+*+*+*"
+```
 
 Commands:
 

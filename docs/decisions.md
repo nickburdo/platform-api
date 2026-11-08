@@ -683,6 +683,60 @@ ADR-012 made the platform single-tenant (one admin, guests read and write demo d
 
 ---
 
+# ADR-015
+
+## Title
+
+Daily Demo Date Shift for Health Monitor
+
+---
+
+### Status
+
+Accepted (2026-11-08, Version 4.2 planning). See `plans/v4.2-plan.md`.
+
+---
+
+### Context
+
+`seed.sql` computes demo dates relative to the moment it runs, but nothing refreshes them afterwards. A month after the last `npm run db:seed:health-monitor` the newest demo measurement is a month old, and the Health Monitor charts and dashboard look abandoned to a visitor. Reseeding by hand is easy to forget.
+
+---
+
+### Decision
+
+- **A Cron Trigger** (`"0 0 * * *"`, daily at 00:00 UTC) runs a `scheduled` handler in the same Worker.
+- The handler **shifts** every date of the Health Monitor demo rows (`user_id IS NULL`) — `measured_at` / `happened_at`, `created_at`, `updated_at` — forward by **N whole days** elapsed since the last shift (or seed).
+- The state lives in a single-row table `demo_refresh_state` (`refreshed_at`) in `health-monitor-db`. `refreshed_at` advances by exactly N days, never to "now", so no fraction of a day is ever lost.
+- The four table updates and the state update run in **one `batch()`** (a D1 transaction). N is computed inside every statement from the state row, and every statement is guarded by `N >= 1`, so a repeated run changes nothing.
+- `seed.sql` writes the state row; without it the handler does nothing.
+- Job Tracker is out of scope.
+
+---
+
+### Rationale
+
+- A shift keeps the seeded shape (intervals, order, time of day) and needs no copy of the seed data in the Worker.
+- Whole days with an advancing state never put a demo record in the future and never drift.
+- The cron keeps the request path read-only: guest reads never write and never wait for a refresh.
+
+**Rejected alternatives.**
+
+- **Refresh on guest reads** (check the state on every guest request and shift when stale): it puts writes and a failure mode into GET requests, needs the shift to finish before the dashboard's parallel reads, and adds a query to every guest request.
+- **Scheduled reseed** (run the seed from the Worker): the seed SQL would have to be bundled or duplicated in code.
+- **Calendar-day N** (`date('now') > date(refreshed_at)`): a shift right after midnight can move the newest record hours into the future.
+
+---
+
+### Consequences
+
+- The newest demo record can be up to ~48 h old, depending on the gap between the seed time of day and 00:00 UTC.
+- The Worker has a second entrypoint (`scheduled`) and a trigger in `wrangler.jsonc`; the trigger is registered by `wrangler deploy`, with no dashboard setup. Trigger changes take up to 15 minutes to propagate.
+- A failed run is logged and rethrown; the code adds no retry of its own. The next daily run catches up, because N accumulates, and any repeated run is harmless (N = 0).
+- A bug in the `user_id IS NULL` filter would shift real user data; a repo test pins it.
+
+---
+
 # Future Decisions
 
 Future ADRs may include:

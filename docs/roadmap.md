@@ -447,6 +447,41 @@ Version 4 is complete when:
 
 ---
 
+# Version 4.2
+
+## Goal
+
+Keep the Health Monitor demo data looking current without manual reseeding: a daily Cron Trigger shifts all dates of the demo rows forward by whole elapsed days. See `plans/v4.2-plan.md` and ADR-015.
+
+---
+
+## Tasks
+
+Mirrors `plans/v4.2-plan.md`.
+
+- [ ] Docs-first pass: `decisions.md` (ADR-015), `models.md`, `architecture.md`, `development.md`, `deployment.md`, `roadmap.md`
+- [ ] `demo_refresh_state` table and migration in `health-monitor-db`
+- [ ] `shiftDemoDates` repository function (one atomic batch, demo rows only)
+- [ ] `seed.sql` writes the shift state
+- [ ] `scheduled` entrypoint and `"0 0 * * *"` Cron Trigger
+- [ ] Repo test for the shift
+- [ ] Deployment (only on explicit request) and live verification after the first cron run
+- [ ] Close-out docs
+
+---
+
+## Definition of Done
+
+Version 4.2 is complete when:
+
+- [ ] Demo dates of all four Health Monitor tables shift daily by whole days; user rows never change
+- [ ] A manual reseed resets the shift state
+- [ ] Repo test green; gate green
+- [ ] Docs updated
+- [ ] Deployed; the first cron run verified live
+
+---
+
 # Future Versions
 
 Possible future improvements include:

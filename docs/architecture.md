@@ -256,6 +256,23 @@ Cloudflare D1
 JSON Response
 ```
 
+### Scheduled Flow (V4.2)
+
+Besides HTTP requests, the Worker has a second entrypoint: a `scheduled` handler invoked by a Cron Trigger (`"0 0 * * *"`, daily at 00:00 UTC, configured in `wrangler.jsonc`). It does not pass through Hono, identity resolution or validation; it calls one repository function that shifts the Health Monitor demo dates forward by whole elapsed days (ADR-015).
+
+```text
+Cron Trigger (00:00 UTC)
+      │
+      ▼
+scheduled handler (src/index.ts)
+      │
+      ▼
+shiftDemoDates — one D1 batch (transaction)
+      │
+      ▼
+Cloudflare D1: health-monitor-db (demo rows only)
+```
+
 ---
 
 ## Design Decisions

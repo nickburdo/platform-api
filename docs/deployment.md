@@ -262,6 +262,31 @@ All three databases must be restored — restoring only some leaves a mix of V3 
 
 ---
 
+# Version 4.2 Deployment Procedure (Demo Date Shift)
+
+Version 4.2 adds a Cron Trigger and one table in `health-monitor-db` (ADR-015). The trigger is declared in `wrangler.jsonc` and registered by `npx wrangler deploy` — **no Cloudflare Dashboard setup is needed**:
+
+```jsonc
+"triggers": {
+  "crons": ["0 0 * * *"], // daily at 00:00 UTC
+},
+```
+
+Trigger changes take up to 15 minutes to propagate after a deploy. Workers Free allows 5 Cron Triggers per account; this project uses 1. To disable the trigger, set `"crons": []` and deploy — commenting out the key does **not** remove a deployed trigger.
+
+Deploy **only on an explicit request**, in this order:
+
+1. **Restore points.** Record a Time Travel bookmark (`npx wrangler d1 time-travel info health-monitor-db`) and the current Worker version ID (`npx wrangler deployments list`) in `plans/v4.2-plan.md`.
+2. **Migration:** `npx wrangler d1 migrations apply health-monitor-db --remote` — creates `demo_refresh_state`. The old Worker ignores the table.
+3. **Reseed:** `npm run db:seed:health-monitor` — fresh demo dates and the first `demo_refresh_state` row. Until this row exists the cron does nothing.
+4. **Deploy:** `npx wrangler deploy`; record the new Version ID in the plan.
+5. **Live check right away:** guest `GET /dashboard` → `200` with demo data; `npx wrangler d1 execute health-monitor-db --remote --command "SELECT * FROM demo_refresh_state"` → one row.
+6. **Live check after the first 00:00 UTC run:** the run is visible in the Worker logs (`"event":"demo-date-shift"`), and `refreshed_at` has advanced by whole days — or stayed the same, if less than 24 h passed since step 3.
+
+**V4.2 rollback.** `npx wrangler rollback <version ID from step 1>` — this also removes the trigger, since triggers belong to the deployed configuration. `npm run db:seed:health-monitor` restores the demo rows; the bookmark from step 1 is the fallback if user rows were affected. The extra table can stay.
+
+---
+
 # Build
 
 If a build step exists:
