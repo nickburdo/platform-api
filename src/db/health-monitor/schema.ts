@@ -1,4 +1,5 @@
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 const commonColumns = {
   id: text('id').primaryKey(),
@@ -71,6 +72,18 @@ export const symptomEntries = sqliteTable(
     index('symptom_entries_type_idx').on(table.type),
     index('symptom_entries_user_id_idx').on(table.userId),
   ],
+);
+
+// Single-row state of the daily demo date shift (v4.2-plan.md Decision 6,
+// ADR-015). refreshed_at is the moment the demo dates correspond to; it is
+// written by seed.sql and advanced by exactly N whole days on every shift.
+export const demoRefreshState = sqliteTable(
+  'demo_refresh_state',
+  {
+    id: integer('id').primaryKey(),
+    refreshedAt: text('refreshed_at').notNull(),
+  },
+  (table) => [check('demo_refresh_state_single_row', sql`${table.id} = 1`)],
 );
 
 export type GlucoseMeasurement = typeof glucoseMeasurements.$inferSelect;

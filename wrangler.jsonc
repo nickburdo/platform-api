@@ -9,6 +9,11 @@
   "vars": {
     "ALLOWED_FRONTEND_ORIGINS": "https://health-monitor-new.pages.dev,https://job-tracker-new.pages.dev",
   },
+  // Daily demo date shift for Health Monitor at 00:00 UTC (ADR-015).
+  // To disable, set "crons": [] and deploy; commenting the key out does not remove the trigger.
+  "triggers": {
+    "crons": ["0 0 * * *"],
+  },
   "d1_databases": [
     {
       "binding": "JOB_TRACKER_DB",

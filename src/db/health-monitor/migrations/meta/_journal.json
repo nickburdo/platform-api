@@ -15,6 +15,13 @@
       "when": 1783000000000,
       "tag": "0001_user_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794125339389,
+      "tag": "0002_curious_chamber",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,8 @@
 -- Demo fixtures adapted from docs/seed/health-monitor/seed.mjs (see docs/plans/v1-plan.md Decision #18).
 -- Dates are relative to the seed run time (SQLite date functions), not fixed, so demo data
--- always looks current instead of aging into the past. Re-running this file is always safe:
--- it only ever touches demo rows (user_id IS NULL).
+-- starts out current. Re-running this file is always safe:
+-- it only ever touches demo rows (user_id IS NULL) and the demo_refresh_state row. The daily
+-- cron (src/index.ts, ADR-015) then shifts these dates forward by whole days.
 
 DELETE FROM glucose_measurements WHERE user_id IS NULL;
 DELETE FROM blood_pressure_measurements WHERE user_id IS NULL;
@@ -63,3 +64,10 @@ INSERT INTO symptom_entries (
   ('28b630ec-7afb-4d2d-ac00-2fbaebec0724', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-23 days') || 'Z', 'headache', 4, 'Evening note'),
   ('cd60be3f-4b9a-44e3-a03d-0a064ef02c43', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-28 days') || 'Z', 'bloating', 2, 'Mild issue'),
   ('22887805-848b-49ec-b6b1-818b20ecd952', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-30 days') || 'Z', 'bloating', 1, 'Brief note');
+
+-- Daily demo date shift state (v4.2-plan.md Decision 14, ADR-015): the demo dates above
+-- correspond to "now", so a reseed resets the shift and the next cron run does not move
+-- these fresh rows again.
+INSERT INTO demo_refresh_state (id, refreshed_at)
+VALUES (1, strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z')
+ON CONFLICT (id) DO UPDATE SET refreshed_at = excluded.refreshed_at;

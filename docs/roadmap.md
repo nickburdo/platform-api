@@ -459,12 +459,12 @@ Keep the Health Monitor demo data looking current without manual reseeding: a da
 
 Mirrors `plans/v4.2-plan.md`.
 
-- [ ] Docs-first pass: `decisions.md` (ADR-015), `models.md`, `architecture.md`, `development.md`, `deployment.md`, `roadmap.md`
-- [ ] `demo_refresh_state` table and migration in `health-monitor-db`
-- [ ] `shiftDemoDates` repository function (one atomic batch, demo rows only)
-- [ ] `seed.sql` writes the shift state
-- [ ] `scheduled` entrypoint and `"0 0 * * *"` Cron Trigger
-- [ ] Repo test for the shift
+- [x] Docs-first pass: `decisions.md` (ADR-015), `models.md`, `architecture.md`, `development.md`, `deployment.md`, `roadmap.md`
+- [x] `demo_refresh_state` table and migration in `health-monitor-db`
+- [x] `shiftDemoDates` repository function (one atomic batch, demo rows only)
+- [x] `seed.sql` writes the shift state
+- [x] `scheduled` entrypoint and `"0 0 * * *"` Cron Trigger
+- [x] Repo test for the shift
 - [ ] Deployment (only on explicit request) and live verification after the first cron run
 - [ ] Close-out docs
 
