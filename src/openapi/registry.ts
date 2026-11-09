@@ -175,8 +175,8 @@ const glucoseMeasurementSchema = registry.register(
     ...measurementBaseFields,
     id: z.string().openapi({ example: 'glucose_1' }),
     measuredAt: z.string().datetime(),
-    fastingValue: z.number().nullable(),
-    afterMealValue: z.number().nullable(),
+    fastingValue: z.number().nullable().openapi({ description: 'Glucose value in mmol/L' }),
+    afterMealValue: z.number().nullable().openapi({ description: 'Glucose value in mmol/L' }),
   }),
 );
 
@@ -363,7 +363,7 @@ const updateJobApplicationRequestSchema = registry.register(
 const createGlucoseRequestSchema = registry.register(
   'CreateGlucoseRequest',
   createGlucoseSchema.openapi({
-    description: 'Exactly one of fastingValue/afterMealValue must be provided.',
+    description: 'Exactly one of fastingValue/afterMealValue must be provided. Values are in mmol/L.',
     example: { measuredAt: '2026-06-29T08:00:00.000Z', fastingValue: 5.4, note: 'Before breakfast' },
   }),
 );

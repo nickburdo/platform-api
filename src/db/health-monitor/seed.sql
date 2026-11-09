@@ -1,4 +1,5 @@
 -- Demo fixtures adapted from docs/seed/health-monitor/seed.mjs (see docs/plans/v1-plan.md Decision #18).
+-- Glucose values are in mmol/L (converted from the original mg/dL by / 18, 1 decimal; v4.3-plan.md).
 -- Dates are relative to the seed run time (SQLite date functions), not fixed, so demo data
 -- starts out current. Re-running this file is always safe:
 -- it only ever touches demo rows (user_id IS NULL) and the demo_refresh_state row. The daily
@@ -20,16 +21,16 @@ DELETE FROM symptom_entries WHERE user_id IS NULL;
 INSERT INTO glucose_measurements (
   id, created_at, updated_at, ignored, reason, measured_at, fasting_value, after_meal_value, note
 ) VALUES
-  ('7ae2110b-02c0-41f1-abbc-91456362625b', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-0 days') || 'Z', 91, NULL, 'Morning check'),
-  ('94e6f520-9927-4806-a16a-c06e5ab5ee45', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-2 days') || 'Z', NULL, 128, 'After lunch'),
-  ('aebd8960-da1f-46e7-9e9a-97b61cb34dd1', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-7 days') || 'Z', 89, NULL, 'Stable morning'),
-  ('d789dd6c-b9e0-4e15-93e4-9ef4a1edeae5', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-9 days') || 'Z', NULL, 132, 'After dinner'),
-  ('3463ada9-cf5f-44f0-b9b9-1e3b2d7248fc', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-14 days') || 'Z', 87, NULL, 'Before breakfast'),
-  ('43c74b94-804c-4591-963d-128bf9bd8b51', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-16 days') || 'Z', NULL, 124, 'After snack'),
-  ('9686353e-c3f3-464e-ac69-cc385da905f7', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-21 days') || 'Z', 90, NULL, 'Morning check'),
-  ('11d2d99a-9aee-4ac2-9969-8a6744d50b90', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-23 days') || 'Z', NULL, 130, 'After meal'),
-  ('dcdb0705-82f9-4676-a769-ca60996ab337', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-28 days') || 'Z', 92, NULL, 'Morning check'),
-  ('24e31dc5-9b13-46bc-b836-65fd72072364', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-30 days') || 'Z', NULL, 126, 'After meal');
+  ('7ae2110b-02c0-41f1-abbc-91456362625b', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-0 days') || 'Z', 5.1, NULL, 'Morning check'),
+  ('94e6f520-9927-4806-a16a-c06e5ab5ee45', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-2 days') || 'Z', NULL, 7.1, 'After lunch'),
+  ('aebd8960-da1f-46e7-9e9a-97b61cb34dd1', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-7 days') || 'Z', 4.9, NULL, 'Stable morning'),
+  ('d789dd6c-b9e0-4e15-93e4-9ef4a1edeae5', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-9 days') || 'Z', NULL, 7.3, 'After dinner'),
+  ('3463ada9-cf5f-44f0-b9b9-1e3b2d7248fc', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-14 days') || 'Z', 4.8, NULL, 'Before breakfast'),
+  ('43c74b94-804c-4591-963d-128bf9bd8b51', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-16 days') || 'Z', NULL, 6.9, 'After snack'),
+  ('9686353e-c3f3-464e-ac69-cc385da905f7', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-21 days') || 'Z', 5.0, NULL, 'Morning check'),
+  ('11d2d99a-9aee-4ac2-9969-8a6744d50b90', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-23 days') || 'Z', NULL, 7.2, 'After meal'),
+  ('dcdb0705-82f9-4676-a769-ca60996ab337', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-28 days') || 'Z', 5.1, NULL, 'Morning check'),
+  ('24e31dc5-9b13-46bc-b836-65fd72072364', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z', 0, '', strftime('%Y-%m-%dT%H:%M:%f', 'now', '-30 days') || 'Z', NULL, 7.0, 'After meal');
 
 INSERT INTO blood_pressure_measurements (
   id, created_at, updated_at, ignored, reason, measured_at, systolic, diastolic, pulse, note

@@ -495,9 +495,9 @@ State the glucose unit explicitly (mmol/L) and convert the demo glucose values f
 Mirrors `plans/v4.3-plan.md`.
 
 - [x] Docs-first pass: `models.md`, `api.md`, `roadmap.md`
-- [ ] Demo glucose values in `seed.sql` converted to mmol/L
-- [ ] Unit stated in the OpenAPI document
-- [ ] `http/glucose.http` values in mmol/L
+- [x] Demo glucose values in `seed.sql` converted to mmol/L
+- [x] Unit stated in the OpenAPI document
+- [x] `http/glucose.http` values in mmol/L
 - [ ] Deployment (only on explicit request): one-off production data conversion, deploy, live verification
 - [ ] Close-out docs
 

@@ -36,7 +36,7 @@ Authorization: Bearer {{token}}
 
 {
   "measuredAt": "2026-07-02T08:00:00.000Z",
-  "fastingValue": 92,
+  "fastingValue": 5.1,
   "note": "HTTP Client verification"
 }
 
@@ -44,7 +44,7 @@ Authorization: Bearer {{token}}
 client.test('201, stamps', function () {
   client.assert(response.status === 201, 'expected 201');
   client.assert(response.body.data.ignored === false, 'expected ignored false');
-  client.assert(response.body.data.fastingValue === 92, 'expected fastingValue 92');
+  client.assert(response.body.data.fastingValue === 5.1, 'expected fastingValue 5.1');
   client.assert(response.body.data.afterMealValue === null, 'expected afterMealValue null');
 });
 client.global.set('glucoseId', response.body.data.id);
@@ -57,8 +57,8 @@ Authorization: Bearer {{token}}
 
 {
   "measuredAt": "2026-07-02T08:00:00.000Z",
-  "fastingValue": 92,
-  "afterMealValue": 130
+  "fastingValue": 5.1,
+  "afterMealValue": 7.2
 }
 
 > {% client.test('400', function () { client.assert(response.status === 400, 'expected 400'); }); %}
@@ -80,13 +80,13 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "afterMealValue": 128
+  "afterMealValue": 7.1
 }
 
 > {%
 client.test('200, value switched', function () {
   client.assert(response.status === 200, 'expected 200');
-  client.assert(response.body.data.afterMealValue === 128, 'expected afterMealValue 128');
+  client.assert(response.body.data.afterMealValue === 7.1, 'expected afterMealValue 7.1');
   client.assert(response.body.data.fastingValue === null, 'expected fastingValue nulled');
 });
 %}
@@ -152,7 +152,7 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "fastingValue": 95
+  "fastingValue": 5.3
 }
 
 > {%
@@ -200,7 +200,7 @@ Content-Type: application/json
 
 {
   "measuredAt": "2026-07-02T08:00:00.000Z",
-  "fastingValue": 90
+  "fastingValue": 5.0
 }
 
 > {%
@@ -228,7 +228,7 @@ PATCH {{baseUrl}}/glucose/{{glucoseId}}
 Content-Type: application/json
 
 {
-  "fastingValue": 95
+  "fastingValue": 5.3
 }
 
 > {%

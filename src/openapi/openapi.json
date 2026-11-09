@@ -316,11 +316,13 @@
           },
           "fastingValue": {
             "type": "number",
-            "nullable": true
+            "nullable": true,
+            "description": "Glucose value in mmol/L"
           },
           "afterMealValue": {
             "type": "number",
-            "nullable": true
+            "nullable": true,
+            "description": "Glucose value in mmol/L"
           }
         },
         "required": [
@@ -873,7 +875,7 @@
           "measuredAt"
         ],
         "additionalProperties": false,
-        "description": "Exactly one of fastingValue/afterMealValue must be provided.",
+        "description": "Exactly one of fastingValue/afterMealValue must be provided. Values are in mmol/L.",
         "example": {
           "measuredAt": "2026-06-29T08:00:00.000Z",
           "fastingValue": 5.4,
