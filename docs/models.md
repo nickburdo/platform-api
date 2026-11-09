@@ -147,13 +147,15 @@ Represents a single blood glucose measurement.
 | createdAt | ISO string | ✓ | Record creation time |
 | updatedAt | ISO string | ✓ | Last update time |
 | measuredAt | ISO string | ✓ | Measurement time |
-| fastingValue | number \| null | | Fasting glucose value |
-| afterMealValue | number \| null | | After-meal glucose value |
+| fastingValue | number \| null | | Fasting glucose value, mmol/L |
+| afterMealValue | number \| null | | After-meal glucose value, mmol/L |
 | note | string | | Optional note |
 | ignored | boolean | ✓ | Ignore flag |
 | reason | string | | Ignore reason |
 
 A measurement is taken either fasting or after a meal — never both at once, never neither.
+
+All glucose values are in **mmol/L** (mg/dL ÷ 18). The unit is not stored per record and not validated beyond `> 0` (Version 4.3).
 
 ### Validation Rules
 

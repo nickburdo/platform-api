@@ -482,6 +482,38 @@ Version 4.2 is complete when:
 
 ---
 
+# Version 4.3
+
+## Goal
+
+State the glucose unit explicitly (mmol/L) and convert the demo glucose values from mg/dL. See `plans/v4.3-plan.md`.
+
+---
+
+## Tasks
+
+Mirrors `plans/v4.3-plan.md`.
+
+- [x] Docs-first pass: `models.md`, `api.md`, `roadmap.md`
+- [ ] Demo glucose values in `seed.sql` converted to mmol/L
+- [ ] Unit stated in the OpenAPI document
+- [ ] `http/glucose.http` values in mmol/L
+- [ ] Deployment (only on explicit request): one-off production data conversion, deploy, live verification
+- [ ] Close-out docs
+
+---
+
+## Definition of Done
+
+Version 4.3 is complete when:
+
+- [ ] Demo glucose values are in mmol/L, in `seed.sql` and in production
+- [ ] The unit is stated in `models.md`, `api.md` and the OpenAPI document
+- [ ] Gate green
+- [ ] Deployed and live-verified
+
+---
+
 # Future Versions
 
 Possible future improvements include:

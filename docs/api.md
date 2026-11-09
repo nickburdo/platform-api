@@ -632,7 +632,7 @@ Health Monitor create bodies must not include `ignored`/`reason` (server-managed
 
 ## GET /glucose
 
-Returns glucose measurements.
+Returns glucose measurements. All glucose values (`fastingValue`, `afterMealValue`) are in **mmol/L** (Version 4.3).
 
 ---
 
