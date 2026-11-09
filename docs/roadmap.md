@@ -498,8 +498,8 @@ Mirrors `plans/v4.3-plan.md`.
 - [x] Demo glucose values in `seed.sql` converted to mmol/L
 - [x] Unit stated in the OpenAPI document
 - [x] `http/glucose.http` values in mmol/L
-- [ ] Deployment (only on explicit request): one-off production data conversion, deploy, live verification
-- [ ] Close-out docs
+- [x] Deployment (only on explicit request): one-off production data conversion, deploy, live verification
+- [x] Close-out docs
 
 ---
 
@@ -507,10 +507,10 @@ Mirrors `plans/v4.3-plan.md`.
 
 Version 4.3 is complete when:
 
-- [ ] Demo glucose values are in mmol/L, in `seed.sql` and in production
-- [ ] The unit is stated in `models.md`, `api.md` and the OpenAPI document
-- [ ] Gate green
-- [ ] Deployed and live-verified
+- [x] Demo glucose values are in mmol/L, in `seed.sql` and in production
+- [x] The unit is stated in `models.md`, `api.md` and the OpenAPI document
+- [x] Gate green
+- [x] Deployed and live-verified
 
 ---
 
